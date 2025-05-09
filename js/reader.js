@@ -183,8 +183,16 @@ var Reader = (function() {
      * Apply current settings to the reader
      */
     function applySettings() {
+        // Safari iOS 9 compatibility - fix theme application
+        var isIOS9Safari = document.documentElement.classList.contains('ios-9');
+        
         // Apply theme
         document.body.className = currentSettings.theme + '-theme';
+        if (isIOS9Safari) {
+            // Keep iOS-9 class for Safari iOS 9
+            document.body.classList.add('ios-9');
+        }
+        
         if (currentSettings.pdfNightMode && currentFormat === 'pdf' && currentSettings.theme === 'dark') {
             document.body.classList.add('night-reading');
         } else {
@@ -430,22 +438,75 @@ var Reader = (function() {
      */
     function loadEpub(book) {
         try {
+            // Check for iOS 9 Safari to use simpler rendering
+            var isIOS9Safari = document.documentElement.classList.contains('ios-9');
+            
             // Create new book with epub.js
             var epubBook = ePub();
             epubBook.open(book.data);
             
-            // Create rendition
-            rendition = epubBook.renderTo(readerContainer, {
+            // Create rendition with optimized settings for iOS 9
+            var renditionOptions = {
                 width: '100%',
                 height: '100%',
                 spread: 'none',
                 flow: 'paginated',
                 minSpreadWidth: 800
-            });
+            };
+            
+            // Use simpler rendering for iOS 9 Safari
+            if (isIOS9Safari) {
+                // Optimize for iOS 9 Safari
+                renditionOptions.flow = 'scrolled-doc'; // Use simpler flow mode
+                renditionOptions.manager = 'continuous'; // Use continuous rendering
+                renditionOptions.gap = 0; // No gap between pages
+                
+                // Simplify the reader container
+                readerContainer.style.overflowY = 'auto';
+                readerContainer.style.WebkitOverflowScrolling = 'touch';
+            }
+            
+            // Create rendition
+            rendition = epubBook.renderTo(readerContainer, renditionOptions);
             
             // Apply current settings
             rendition.themes.fontSize(currentSettings.fontSize + '%');
             rendition.themes.font(currentSettings.fontFamily);
+            
+            // Special handling for iOS 9 - retry rendering if failed
+            if (isIOS9Safari) {
+                var renderAttempts = 0;
+                var maxAttempts = 3;
+                
+                function attemptRender() {
+                    renderAttempts++;
+                    try {
+                        if (book.currentLocation) {
+                            rendition.display(book.currentLocation);
+                        } else {
+                            rendition.display();
+                        }
+                    } catch (e) {
+                        console.warn('EPUB rendering attempt ' + renderAttempts + ' failed:', e);
+                        if (renderAttempts < maxAttempts) {
+                            setTimeout(attemptRender, 500);
+                        } else {
+                            console.error('Failed to render EPUB after multiple attempts');
+                            alert('Unable to render this EPUB book on your device. Please try a different book.');
+                            closeReader();
+                        }
+                    }
+                }
+                
+                attemptRender();
+            } else {
+                // Normal rendering for other browsers
+                if (book.currentLocation) {
+                    rendition.display(book.currentLocation);
+                } else {
+                    rendition.display();
+                }
+            }
             
             // Get total pages (approximately)
             epubBook.loaded.navigation.then(function(nav) {
@@ -460,13 +521,6 @@ var Reader = (function() {
                 }
                 totalPagesElement.textContent = totalPages;
             });
-            
-            // Display
-            if (book.currentLocation) {
-                rendition.display(book.currentLocation);
-            } else {
-                rendition.display();
-            }
             
             // Update page info on location change
             rendition.on('relocated', function(location) {
@@ -489,7 +543,7 @@ var Reader = (function() {
             });
         } catch (e) {
             console.error('Failed to load EPUB:', e);
-            alert('Failed to load EPUB book. It may be corrupted.');
+            alert('Failed to load EPUB book. It may be corrupted or not compatible with your device.');
             closeReader();
         }
     }
@@ -499,6 +553,9 @@ var Reader = (function() {
      */
     function loadPdf(book) {
         try {
+            // Check for iOS 9 Safari
+            var isIOS9Safari = document.documentElement.classList.contains('ios-9');
+            
             // Check if PDF.js is available
             if (typeof pdfjsLib === 'undefined') {
                 alert('PDF reader is not available. Please make sure pdf.js is properly loaded.');
@@ -507,13 +564,20 @@ var Reader = (function() {
                 return;
             }
             
-            // Create PDF viewer container
+            // Create PDF viewer container with simpler structure for iOS 9
             var viewerContainer = document.createElement('div');
             viewerContainer.className = 'pdf-viewer';
             viewerContainer.style.width = '100%';
             viewerContainer.style.height = '100%';
-            viewerContainer.style.overflow = 'auto';
             viewerContainer.style.position = 'relative';
+            
+            // For iOS 9, use simpler overflow handling
+            if (isIOS9Safari) {
+                viewerContainer.style.overflow = 'scroll';
+                viewerContainer.style.WebkitOverflowScrolling = 'touch';
+            } else {
+                viewerContainer.style.overflow = 'auto';
+            }
             
             var canvasContainer = document.createElement('div');
             canvasContainer.className = 'pdf-canvas-container';
@@ -524,6 +588,31 @@ var Reader = (function() {
             canvas.style.display = 'block';
             canvas.style.margin = '0 auto';
             
+            // Optimized handling for iOS 9
+            if (isIOS9Safari) {
+                // Use a smaller scale for better performance
+                canvas.style.maxWidth = '100%';
+                
+                // Add touch scroll hint for iOS 9
+                var scrollHint = document.createElement('div');
+                scrollHint.style.position = 'absolute';
+                scrollHint.style.bottom = '10px';
+                scrollHint.style.left = '0';
+                scrollHint.style.width = '100%';
+                scrollHint.style.textAlign = 'center';
+                scrollHint.style.padding = '5px';
+                scrollHint.style.color = '#666';
+                scrollHint.style.fontSize = '12px';
+                scrollHint.innerHTML = 'Scroll to read more';
+                scrollHint.style.opacity = '0.7';
+                canvasContainer.appendChild(scrollHint);
+                
+                // Hide hint after 5 seconds
+                setTimeout(function() {
+                    scrollHint.style.display = 'none';
+                }, 5000);
+            }
+            
             canvasContainer.appendChild(canvas);
             viewerContainer.appendChild(canvasContainer);
             readerContainer.appendChild(viewerContainer);
@@ -533,8 +622,13 @@ var Reader = (function() {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/lib/pdf.worker.min.js';
             }
             
+            // For iOS 9, use a more reliable approach with smaller chunks
+            var pdfOptions = isIOS9Safari 
+                ? { data: book.data, disableRange: true, disableStream: true } 
+                : { data: book.data };
+            
             // Initialize PDF.js
-            pdfjsLib.getDocument({ data: book.data }).promise
+            pdfjsLib.getDocument(pdfOptions).promise
                 .then(function(pdf) {
                     pdfDocument = pdf;
                     totalPages = pdf.numPages;
@@ -542,14 +636,22 @@ var Reader = (function() {
                     
                     // Set initial page (using saved progress)
                     currentPage = book.progress ? Math.max(1, Math.round(book.progress * totalPages)) : 1;
-                    renderPage(currentPage);
+                    
+                    // Add a small delay for iOS 9 Safari
+                    if (isIOS9Safari) {
+                        setTimeout(function() {
+                            renderPage(currentPage);
+                        }, 100);
+                    } else {
+                        renderPage(currentPage);
+                    }
                     
                     // Apply settings after PDF is loaded
                     applySettings();
                 })
                 .catch(function(error) {
                     console.error('Failed to load PDF:', error);
-                    alert('Failed to load PDF book. It may be corrupted.');
+                    alert('Failed to load PDF book. It may be corrupted or too large for your device.');
                     closeReader();
                 });
         } catch (e) {
@@ -560,7 +662,7 @@ var Reader = (function() {
     }
     
     /**
-     * Render a specific PDF page
+     * Render a specific PDF page with iOS 9 optimization
      */
     function renderPage(pageNumber) {
         if (!pdfDocument) return;
@@ -587,33 +689,80 @@ var Reader = (function() {
         
         var ctx = canvas.getContext('2d');
         
-        // Get PDF page
-        pdfDocument.getPage(pageNumber).then(function(page) {
-            // Determine scale to fit the viewport
-            var containerWidth = readerContainer.clientWidth - 40; // Account for padding
-            var viewport = page.getViewport({ scale: 1 });
-            var scale = containerWidth / viewport.width;
-            var scaledViewport = page.getViewport({ scale: scale });
-            
-            // Set canvas dimensions
-            canvas.height = scaledViewport.height;
-            canvas.width = scaledViewport.width;
-            
-            // Render PDF page
-            var renderContext = {
-                canvasContext: ctx,
-                viewport: scaledViewport
-            };
-            
-            page.render(renderContext).promise.then(function() {
-                // After rendering, apply night mode if needed
-                if (currentSettings.theme === 'dark' && currentSettings.pdfNightMode) {
-                    applyPdfNightMode(true);
-                } else {
-                    applyPdfNightMode(false);
+        // Clear the canvas first to avoid artifacts
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Check for iOS 9 Safari
+        var isIOS9Safari = document.documentElement.classList.contains('ios-9');
+        
+        // Attempt to render the page with error handling
+        function attemptRender() {
+            // Get PDF page
+            pdfDocument.getPage(pageNumber).then(function(page) {
+                // Determine scale to fit the viewport
+                var containerWidth = isIOS9Safari 
+                    ? Math.min(screen.width, 768) - 20 // Optimize for iPad 2 (limit max width)
+                    : readerContainer.clientWidth - 40; // Normal calculation
+                
+                var viewport = page.getViewport({ scale: 1 });
+                var scale = containerWidth / viewport.width;
+                
+                // For iOS 9, use a slightly lower scale for better performance
+                if (isIOS9Safari && scale > 1.2) {
+                    scale = 1.2;
                 }
+                
+                var scaledViewport = page.getViewport({ scale: scale });
+                
+                // Set canvas dimensions
+                canvas.height = scaledViewport.height;
+                canvas.width = scaledViewport.width;
+                
+                // Render PDF page
+                var renderContext = {
+                    canvasContext: ctx,
+                    viewport: scaledViewport
+                };
+                
+                page.render(renderContext).promise.then(function() {
+                    // After rendering, apply night mode if needed
+                    if (currentSettings.theme === 'dark' && currentSettings.pdfNightMode) {
+                        applyPdfNightMode(true);
+                    } else {
+                        applyPdfNightMode(false);
+                    }
+                }).catch(function(error) {
+                    console.error('Error rendering PDF page:', error);
+                    
+                    // For iOS 9 Safari, try one more time with lower quality
+                    if (isIOS9Safari) {
+                        console.log('Retrying PDF render with lower quality');
+                        
+                        // Create a simpler render context with lower quality
+                        var simpleRenderContext = {
+                            canvasContext: ctx,
+                            viewport: scaledViewport,
+                            intent: 'display', // Lower quality
+                            renderInteractiveForms: false,
+                            enableWebGL: false
+                        };
+                        
+                        page.render(simpleRenderContext).promise.catch(function(finalError) {
+                            console.error('Final PDF render attempt failed:', finalError);
+                        });
+                    }
+                });
+            }).catch(function(error) {
+                console.error('Error getting PDF page:', error);
             });
-        });
+        }
+        
+        // For iOS 9, add a small delay
+        if (isIOS9Safari) {
+            setTimeout(attemptRender, 50);
+        } else {
+            attemptRender();
+        }
     }
     
     /**

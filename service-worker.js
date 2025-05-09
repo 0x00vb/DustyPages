@@ -1,4 +1,5 @@
 /**
+ * 
  * Service Worker for RustyPages
  * Provides offline caching for the app
  * Note: This won't run on iOS 9 but is included for other browsers

@@ -435,8 +435,8 @@ button:active {
 }
 
 .theme-btn[data-theme="sepia"] {
-    background-color: #f4ecd8;
-    color: #5b4636;
+    background-color: var(--sepia-background);
+    color: var(--sepia-text-primary);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
@@ -1059,4 +1059,243 @@ body.dark-theme {
 
 .sepia-theme #font-size-value {
     color: var(--sepia-text-primary);
+}
+
+/* iOS 9 Safari specific fixes */
+.ios-safari {
+    /* Force hardware acceleration */
+    -webkit-transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    -webkit-perspective: 1000;
+}
+
+/* Fix for iOS Safari positioning */
+.ios-safari .app-header {
+    position: relative;
+    z-index: 5;
+}
+
+/* Fix for iOS Safari standalone mode */
+.ios-standalone #app {
+    /* Avoid status bar in standalone mode */
+    padding-top: 20px;
+    height: calc(100vh - 20px);
+}
+
+/* Fix Safari iOS 9 flexbox */
+.ios-9 .view {
+    display: block !important;
+}
+
+.ios-9 .view.active {
+    display: block !important;
+}
+
+.ios-9 #app {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+.ios-9 .book-shelf {
+    position: absolute;
+    top: 60px;
+    bottom: 0;
+    width: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ios-9 #reader-container {
+    position: absolute;
+    top: 60px;
+    bottom: 60px;
+    width: 100%;
+}
+
+.ios-9 #reader-controls {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+}
+
+/* Fallback for flex layouts in iOS 9 Safari */
+.ios-9 .app-header {
+    position: relative;
+    display: block !important;
+    height: 60px;
+    text-align: center;
+}
+
+.ios-9 .app-header h1,
+.ios-9 .app-header h2 {
+    display: inline-block;
+    margin-top: 15px;
+}
+
+.ios-9 .app-header #back-btn,
+.ios-9 .app-header #settings-btn {
+    position: absolute;
+    top: 10px;
+}
+
+.ios-9 .app-header #back-btn {
+    left: 10px;
+}
+
+.ios-9 .app-header #settings-btn {
+    right: 10px;
+}
+
+.ios-9 .app-header #import-btn {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+}
+
+/* Fix buttons for iOS Safari */
+.ios-safari button {
+    -webkit-appearance: none;
+}
+
+/* Fix for iOS 9 animation glitches */
+.ios-9 * {
+    -webkit-transition: none !important;
+    transition: none !important;
+    animation: none !important;
+}
+
+/* Fix panels for iOS 9 */
+.ios-9 .panel {
+    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 85%;
+    max-width: 350px;
+    background-color: var(--light-surface);
+    z-index: 1000;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+    transform: none !important;
+}
+
+.ios-9 .panel.active {
+    display: block;
+}
+
+/* iOS 9 font rendering fix */
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+    body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+/* Self-hosted font fallbacks for iPad iOS 9 */
+@font-face {
+    font-family: 'OpenDyslexic-fallback';
+    src: url('data:font/woff;base64,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') format('woff');
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+/* Temporary fix for iPad iOS 9 rendering issues */
+/* Use more compatible display modes for flexbox */
+.app-header, 
+.book-item,
+.book-info,
+.book-progress,
+.setting-group,
+.setting-group label, 
+.theme-options,
+.font-size-control,
+.font-family-control,
+.slider-control,
+.slider-row,
+.toggle-switch {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: flex;
+}
+
+/* Fix iOS 9 handling of flex-direction */
+.view,
+.slider-control {
+    -webkit-box-orient: vertical;
+    -webkit-flex-direction: column;
+    flex-direction: column;
+}
+
+/* Override the grid for iOS 9 */
+.theme-options,
+.font-family-control {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: flex;
+    -webkit-box-orient: horizontal;
+    -webkit-flex-direction: row;
+    flex-direction: row;
+    -webkit-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+/* Fixed size buttons for iOS 9 to avoid layout issues */
+.font-btn, .theme-btn {
+    width: 100%;
+    -webkit-box-flex: 0;
+    -webkit-flex: 0 0 48%;
+    flex: 0 0 48%;
+    margin: 1%;
+}
+
+/* Fix SVG filter compatibility issues */
+.sepia-theme .epub-container img,
+.sepia-theme .epub-container svg,
+.dark-theme .epub-container img,
+.dark-theme .epub-container svg {
+    -webkit-filter: none !important;
+    filter: none !important;
+}
+
+/* Simple animations mode for iOS 9 */
+.simple-animations * {
+    -webkit-transition-duration: 0.15s !important;
+    transition-duration: 0.15s !important;
+}
+
+.simple-animations button:active {
+    opacity: 0.8;
+    transform: none !important;
+}
+
+.simple-animations .icon-btn:active {
+    transform: none !important;
+}
+
+.simple-animations .book-item:active {
+    transform: none !important;
+}
+
+.simple-animations .slider::-webkit-slider-thumb:active {
+    transform: none !important;
+}
+
+.simple-animations .font-size-control button:active {
+    transform: none !important;
+}
+
+/* System fonts mode for iOS 9 */
+.system-fonts .font-btn[data-font="merriweather"] {
+    font-family: serif;
+}
+
+.system-fonts .font-btn[data-font="open-dyslexic"] {
+    font-family: 'OpenDyslexic-fallback', sans-serif;
+}
+
+.system-fonts .font-btn[data-font="literata"] {
+    font-family: Georgia, serif;
 } 
