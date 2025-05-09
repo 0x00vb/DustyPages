@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="RustyPages">
+    <meta name="theme-color" content="#f2f2f2">
+    <meta name="description" content="Lightweight EPUB/PDF Reader for older devices">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <title>RustyPages</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <div id="library-view" class="view active">
+            <header class="app-header">
+                <h1>RustyPages Library</h1>
+                <button id="import-btn" class="icon-btn" aria-label="Import books"></button>
+            </header>
+            
+            <div class="book-shelf">
+                <div id="book-list"></div>
+                <div id="empty-library" class="empty-message">
+                    <p>Your library is empty</p>
+                    <button id="empty-import-btn">Import Books</button>
+                </div>
+            </div>
+            
+            <input type="file" id="file-input" accept=".epub,.pdf" multiple style="display: none;">
+        </div>
+
+        <div id="reader-view" class="view">
+            <header class="app-header">
+                <button id="back-btn" class="icon-btn" aria-label="Back to library"></button>
+                <h2 id="book-title">Book Title</h2>
+                <button id="settings-btn" class="icon-btn" aria-label="Reading settings"></button>
+            </header>
+            
+            <div id="reader-container"></div>
+            
+            <div id="reader-controls">
+                <button id="prev-btn">Previous</button>
+                <span id="page-info">Page <span id="current-page">0</span> of <span id="total-pages">0</span></span>
+                <button id="next-btn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-panel" class="panel">
+        <h3>Reading Settings</h3>
+        
+        <div class="setting-group">
+            <label>Theme</label>
+            <div class="theme-options">
+                <button class="theme-btn" data-theme="light">Light</button>
+                <button class="theme-btn" data-theme="sepia">Sepia</button>
+                <button class="theme-btn" data-theme="dark">Dark</button>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <label>Font Size</label>
+            <div class="font-size-control">
+                <button id="font-decrease">A-</button>
+                <span id="font-size-value">100%</span>
+                <button id="font-increase">A+</button>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <label>Font Family</label>
+            <div class="font-family-control">
+                <button class="font-btn" data-font="serif">Serif</button>
+                <button class="font-btn" data-font="sans-serif">Sans-serif</button>
+                <button class="font-btn" data-font="merriweather">Merriweather</button>
+                <button class="font-btn" data-font="open-dyslexic">OpenDyslexic</button>
+                <button class="font-btn" data-font="literata">Literata</button>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <label>Letter Spacing</label>
+            <div class="slider-control">
+                <div class="slider-row">
+                    <input type="range" id="letter-spacing" class="slider" min="0" max="10" value="0">
+                    <div class="slider-value" id="letter-spacing-value">0px</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <label>Line Height</label>
+            <div class="slider-control">
+                <div class="slider-row">
+                    <input type="range" id="line-height" class="slider" min="100" max="200" value="160">
+                    <div class="slider-value" id="line-height-value">1.6</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group" id="pdf-settings">
+            <label>PDF Night Mode</label>
+            <div class="toggle-switch">
+                <input type="checkbox" id="pdf-night-mode">
+                <label for="pdf-night-mode">Enable night mode for PDFs</label>
+            </div>
+        </div>
+        
+        <button id="close-settings">Apply & Close</button>
+    </div>
+
+    <!-- Polyfills -->
+    <script src="js/polyfills.js"></script>
+    
+    <!-- Core libraries -->
+    <script src="js/lib/jszip.min.js"></script>
+    <script src="js/lib/epub.min.js"></script>
+    <script src="js/lib/pdf.min.js"></script>
+    <script src="js/lib/pdf.worker.min.js"></script>
+    <script>
+        // Configure PDF.js to use the worker
+        if (window.pdfjsLib) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/lib/pdf.worker.min.js';
+        }
+    </script>
+    
+    <!-- Application scripts -->
+    <script src="js/storage.js"></script>
+    <script src="js/library.js"></script>
+    <script src="js/reader.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html> 

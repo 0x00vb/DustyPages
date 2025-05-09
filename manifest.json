@@ -1,0 +1,21 @@
+{
+  "name": "RustyPages",
+  "short_name": "RustyPages",
+  "description": "Lightweight EPUB/PDF Reader for older devices",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f2f2f2",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+} 
