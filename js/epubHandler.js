@@ -14,6 +14,8 @@ var EPUBHandler = (function() {
     var locations = null;
     var isGeneratingLocations = false;
     var currentPageNumber = 1; // Track current page explicitly
+    var totalPageCount = 1;    // Track total pages explicitly
+    var progressUpdating = false; // Guard against recursive updates
     
     /**
      * Initialize the EPUB reader with a book file
@@ -32,8 +34,100 @@ var EPUBHandler = (function() {
             
             currentBook = bookData;
             
-            // Create a new book
-            book = ePub(bookData.data);
+            // Create a new book - handle different possible data formats
+            var bookDataToUse = bookData.data;
+            
+            // Convert string data if needed - handle various possible formats
+            if (typeof bookDataToUse === 'string') {
+                console.log('Book data is string, preparing for binary conversion');
+                
+                // Check if it's a base64 data URI
+                if (bookDataToUse.indexOf('data:') === 0) {
+                    try {
+                        // Extract the base64 part
+                        var base64 = bookDataToUse.split(',')[1];
+                        if (base64) {
+                            // Convert to array buffer
+                            var binary = atob(base64);
+                            var len = binary.length;
+                            var bytes = new Uint8Array(len);
+                            for (var i = 0; i < len; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            bookDataToUse = bytes.buffer;
+                            console.log('Converted base64 data URI to ArrayBuffer');
+                        }
+                    } catch (e) {
+                        console.error('Error converting base64 to ArrayBuffer:', e);
+                    }
+                } 
+                // Special case for "UEsDB..." which is a Base64 encoded EPUB without proper header
+                else if (bookDataToUse.indexOf('UEsDB') === 0) {
+                    try {
+                        console.log('Detected Base64 encoded EPUB content');
+                        // This is likely a base64 encoded zip/epub file starting with PK header
+                        // First, try to decode it
+                        try {
+                            var binaryString = atob(bookDataToUse);
+                            var bytes = new Uint8Array(binaryString.length);
+                            for (var i = 0; i < binaryString.length; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            bookDataToUse = bytes.buffer;
+                            console.log('Converted Base64 to ArrayBuffer successfully');
+                        } catch (decodeError) {
+                            console.error('Base64 decode failed, trying direct binary conversion:', decodeError);
+                            // If base64 decode fails, try direct conversion
+                            var blob = new Blob([bookDataToUse], {type: 'application/epub+zip'});
+                            var url = URL.createObjectURL(blob);
+                            bookDataToUse = url;
+                            console.log('Created Blob URL for EPUB:', url.substr(0, 50) + '...');
+                        }
+                    } catch (e) {
+                        console.error('Error handling UEsDB data:', e);
+                    }
+                }
+                // If it starts with PK (epub zip magic number), it's likely binary data stored as string
+                else if (bookDataToUse.indexOf('PK') === 0) {
+                    try {
+                        var len = bookDataToUse.length;
+                        var bytes = new Uint8Array(len);
+                        for (var i = 0; i < len; i++) {
+                            bytes[i] = bookDataToUse.charCodeAt(i);
+                        }
+                        bookDataToUse = bytes.buffer;
+                        console.log('Converted binary string to ArrayBuffer');
+                    } catch (e) {
+                        console.error('Error converting binary string to ArrayBuffer:', e);
+                    }
+                }
+                // If it's a URL, we'll use it directly but warn
+                else if (bookDataToUse.indexOf('http') === 0 || bookDataToUse.indexOf('/') === 0 || bookDataToUse.indexOf('blob:') === 0) {
+                    console.log('Book data appears to be a URL:', bookDataToUse.substring(0, 50) + '...');
+                }
+                // Otherwise, it's probably not valid EPUB data
+                else {
+                    console.warn('Book data is in an unexpected string format:', bookDataToUse.substring(0, 50) + '...');
+                    // Try to convert it to a blob as a last resort
+                    try {
+                        var blob = new Blob([bookDataToUse], {type: 'application/epub+zip'});
+                        var url = URL.createObjectURL(blob);
+                        bookDataToUse = url;
+                        console.log('Created Blob URL from unknown string data:', url);
+                    } catch (e) {
+                        console.error('Error creating blob from string:', e);
+                    }
+                }
+            }
+            
+            // Log the type of data we're using
+            console.log('Using book data of type:', typeof bookDataToUse);
+            if (bookDataToUse instanceof ArrayBuffer) {
+                console.log('ArrayBuffer length:', bookDataToUse.byteLength);
+            }
+            
+            // Initialize the book with appropriate data
+            book = ePub(bookDataToUse);
             
             // Generate a rendition
             rendition = book.renderTo(container, {
@@ -62,15 +156,37 @@ var EPUBHandler = (function() {
                         // Force an initial location update, since locationChanged might not fire
                         if (rendition.location && rendition.location.start) {
                             currentLocation = rendition.location;
+                            
+                            // Make sure currentPageNumber is correctly set
+                            if (currentLocation.start && typeof currentLocation.start.index !== 'undefined') {
+                                currentPageNumber = currentLocation.start.index + 1;
+                            } else {
+                                currentPageNumber = 1;
+                            }
+                            
                             updatePageDisplay();
                         }
                         if (callback) callback(true);
+                    }).catch(function(error) {
+                        console.error("Error displaying at position:", error);
+                        // Fall back to first page
+                        rendition.display().then(function() {
+                            if (callback) callback(true);
+                        });
                     });
                 } else {
                     rendition.display().then(function() {
                         // Force an initial location update
                         if (rendition.location && rendition.location.start) {
                             currentLocation = rendition.location;
+                            
+                            // Make sure currentPageNumber is correctly set
+                            if (currentLocation.start && typeof currentLocation.start.index !== 'undefined') {
+                                currentPageNumber = currentLocation.start.index + 1;
+                            } else {
+                                currentPageNumber = 1;
+                            }
+                            
                             updatePageDisplay();
                         }
                         if (callback) callback(true);
@@ -127,6 +243,11 @@ var EPUBHandler = (function() {
                 
                 // Update progress info
                 updateProgressInfo();
+            }).catch(function(error) {
+                console.error("Error generating locations:", error);
+                isGeneratingLocations = false;
+                // Still update progress info using fallback methods
+                updateProgressInfo();
             });
         });
     }
@@ -152,8 +273,7 @@ var EPUBHandler = (function() {
                 if (pageEl) {
                     var totalItems = book.spine.items.length;
                     var estimatedPage = Math.max(1, Math.ceil((value / 100) * totalItems));
-                    // Update both the display and our tracked page number
-                    currentPageNumber = estimatedPage;
+                    // Update the display only (don't change currentPageNumber yet)
                     pageEl.textContent = estimatedPage;
                 }
             }
@@ -182,44 +302,125 @@ var EPUBHandler = (function() {
     function jumpToPosition(percent) {
         if (!book || !rendition) return;
         
-        // Calculate and update the current page number before navigating
+        // Calculate the page number for display purposes
+        var pageToShow = 1;
         if (book.spine && book.spine.items && book.spine.items.length > 0) {
             var totalItems = book.spine.items.length;
-            currentPageNumber = Math.max(1, Math.ceil((percent / 100) * totalItems));
+            pageToShow = Math.max(1, Math.ceil((percent / 100) * totalItems));
             
-            // Update the display immediately
+            // Update the display immediately for responsiveness
             var pageEl = document.getElementById('current-page');
             if (pageEl) {
-                pageEl.textContent = currentPageNumber;
+                pageEl.textContent = pageToShow;
             }
         }
+        
+        // Save the page number before navigation so we can fall back to it if needed
+        var targetPageNumber = pageToShow;
         
         // If locations are being generated, just use the spine-based navigation
         if (isGeneratingLocations || !book.locations || book.locations.length() === 0) {
             // Fallback: calculate position based on spine
             if (book.spine && book.spine.items && book.spine.items.length > 0) {
                 var index = Math.floor((book.spine.items.length - 1) * (percent / 100));
-                // Store the intended page in case the locationChanged event doesn't fire immediately
+                index = Math.max(0, Math.min(book.spine.items.length - 1, index));
+                
+                // Store the intended page number
                 currentPageNumber = index + 1;
                 
                 rendition.display(book.spine.items[index].href).then(function(location) {
                     if (location) {
                         currentLocation = location;
+                        
+                        // Ensure page number is correct
+                        if (location.start && typeof location.start.index !== 'undefined') {
+                            currentPageNumber = location.start.index + 1;
+                        } else {
+                            // Fall back to our calculated value
+                            currentPageNumber = targetPageNumber;
+                        }
+                        
                         updateProgressInfo();
+                        updatePageDisplay();
                     }
+                }).catch(function(error) {
+                    console.error("Error jumping to position:", error);
+                    // Still update the page number
+                    currentPageNumber = targetPageNumber;
+                    updateProgressInfo();
+                    updatePageDisplay();
                 });
             }
         } else {
             // Use CFI-based navigation if locations are available
-            var cfi = book.locations.cfiFromPercentage(percent / 100);
-            if (cfi) {
-                rendition.display(cfi).then(function(location) {
-                    if (location) {
-                        currentLocation = location;
-                        updateProgressInfo();
-                    }
-                });
+            try {
+                var cfi = book.locations.cfiFromPercentage(percent / 100);
+                if (cfi) {
+                    rendition.display(cfi).then(function(location) {
+                        if (location) {
+                            currentLocation = location;
+                            
+                            // Ensure page number is correct
+                            if (location.start && typeof location.start.index !== 'undefined') {
+                                currentPageNumber = location.start.index + 1;
+                            } else {
+                                // Fall back to our calculated value
+                                currentPageNumber = targetPageNumber;
+                            }
+                            
+                            updateProgressInfo();
+                            updatePageDisplay();
+                        }
+                    }).catch(function(error) {
+                        console.error("Error jumping to CFI position:", error);
+                        // Fall back to spine-based navigation
+                        jumpToSpinePosition(percent, targetPageNumber);
+                    });
+                } else {
+                    // Fall back to spine-based navigation if cfi computation fails
+                    jumpToSpinePosition(percent, targetPageNumber);
+                }
+            } catch (e) {
+                console.log('Error with CFI navigation:', e);
+                // Fall back to spine-based navigation
+                jumpToSpinePosition(percent, targetPageNumber);
             }
+        }
+    }
+    
+    /**
+     * Helper function to jump to a spine position as a fallback
+     */
+    function jumpToSpinePosition(percent, targetPageNumber) {
+        if (book.spine && book.spine.items && book.spine.items.length > 0) {
+            var index = Math.floor((book.spine.items.length - 1) * (percent / 100));
+            index = Math.max(0, Math.min(book.spine.items.length - 1, index));
+            
+            // Store the intended page number
+            currentPageNumber = index + 1;
+            
+            rendition.display(book.spine.items[index].href).then(function(location) {
+                if (location) {
+                    currentLocation = location;
+                    
+                    // Ensure page number is correct
+                    if (location.start && typeof location.start.index !== 'undefined') {
+                        currentPageNumber = location.start.index + 1;
+                    } else {
+                        // Fall back to our calculated value
+                        currentPageNumber = targetPageNumber;
+                    }
+                    
+                    updateProgressInfo();
+                    updatePageDisplay();
+                }
+            }).catch(function(error) {
+                console.error("Error jumping to spine position:", error);
+                // Still update the page number
+                currentPageNumber = targetPageNumber;
+                updateProgressInfo();
+                updatePageDisplay();
+            });
         }
     }
     
@@ -227,54 +428,93 @@ var EPUBHandler = (function() {
      * Update progress information
      */
     function updateProgressInfo() {
-        if (!book) return;
+        if (!book || progressUpdating) return;
         
-        var percentEl = document.getElementById('progress-percent');
-        var sliderEl = document.getElementById('progress-slider');
+        progressUpdating = true;
         
-        // Calculate progress percentage
-        var progress = 0;
-        
-        if (currentLocation) {
-            if (book.locations && book.locations.length() > 0) {
-                progress = book.locations.percentageFromCfi(currentLocation.start.cfi);
-            } else if (book.spine && book.spine.items && book.spine.items.length > 0) {
-                // Fallback calculation using spine position
-                var index = currentLocation.start.index || 0;
-                progress = (index / Math.max(1, book.spine.items.length - 1));
-            }
-        } else if (currentPageNumber > 1 && book.spine && book.spine.items) {
-            // Use currentPageNumber as fallback
-            progress = (currentPageNumber - 1) / Math.max(1, book.spine.items.length - 1);
-        }
-        
-        // Ensure progress is a valid number
-        if (isNaN(progress) || !isFinite(progress)) {
-            progress = 0;
-        }
-        
-        // Cap progress between 0 and 1
-        progress = Math.max(0, Math.min(1, progress));
-        
-        // Update progress percentage display
-        var percent = Math.round(progress * 100);
-        if (percentEl) {
-            percentEl.textContent = percent + '%';
-        }
-        
-        // Update slider - force a direct value assignment
-        if (sliderEl) {
-            // Directly setting the slider value
-            sliderEl.value = percent;
+        try {
+            var percentEl = document.getElementById('progress-percent');
+            var sliderEl = document.getElementById('progress-slider');
             
-            // Force a UI update by triggering input event (doesn't trigger listeners)
-            var event = document.createEvent('HTMLEvents');
-            event.initEvent('input', false, true);
-            sliderEl.dispatchEvent(event);
+            // Calculate progress percentage
+            var progress = 0;
+            
+            if (currentLocation) {
+                if (book.locations && book.locations.length() > 0 && currentLocation.start && currentLocation.start.cfi) {
+                    try {
+                        progress = book.locations.percentageFromCfi(currentLocation.start.cfi);
+                        // If progress is not a valid number, fall back to spine-based calculation
+                        if (isNaN(progress) || !isFinite(progress)) {
+                            progress = calculateSpineProgress();
+                        }
+                    } catch (e) {
+                        console.log('Error calculating progress from CFI:', e);
+                        // Fall back to spine-based calculation
+                        progress = calculateSpineProgress();
+                    }
+                } else {
+                    // Fallback calculation using spine position
+                    progress = calculateSpineProgress();
+                }
+            } else if (currentPageNumber >= 1 && book.spine && book.spine.items) {
+                // Use currentPageNumber as fallback
+                progress = (currentPageNumber - 1) / Math.max(1, book.spine.items.length - 1);
+            }
+            
+            // For single-page books, show 100% progress
+            if (book.spine && book.spine.items && book.spine.items.length <= 1) {
+                progress = 1;
+            }
+            
+            // Ensure progress is a valid number
+            if (isNaN(progress) || !isFinite(progress)) {
+                progress = 0;
+            }
+            
+            // Cap progress between 0 and 1
+            progress = Math.max(0, Math.min(1, progress));
+            
+            // Update progress percentage display
+            var percent = Math.round(progress * 100);
+            if (percentEl) {
+                percentEl.textContent = percent + '%';
+            }
+            
+            // Update slider - only if value has changed
+            if (sliderEl) {
+                // Check if we need to update the value
+                if (parseInt(sliderEl.value, 10) !== percent) {
+                    // Directly setting the slider value
+                    sliderEl.value = percent;
+                    
+                    // Force a UI update by triggering input event
+                    var event = document.createEvent('HTMLEvents');
+                    event.initEvent('input', false, true);
+                    sliderEl.dispatchEvent(event);
+                }
+            }
+            
+            // Update page display
+            updatePageDisplay();
+        } finally {
+            progressUpdating = false;
         }
-        
-        // Update page display
-        updatePageDisplay();
+    }
+    
+    /**
+     * Helper function to calculate progress based on spine position
+     */
+    function calculateSpineProgress() {
+        if (book.spine && book.spine.items && book.spine.items.length > 0) {
+            var index = 0;
+            if (currentLocation && currentLocation.start) {
+                index = currentLocation.start.index || 0;
+            } else {
+                index = Math.max(0, currentPageNumber - 1);
+            }
+            return index / Math.max(1, book.spine.items.length - 1);
+        }
+        return 0;
     }
     
     /**
@@ -286,39 +526,28 @@ var EPUBHandler = (function() {
         
         if (!pageEl || !totalPagesEl || !book) return;
         
-        // Make sure we have a valid current location
-        if (!currentLocation || !currentLocation.start) {
-            // If we don't have a valid location yet, try to get it from rendition
-            if (rendition && rendition.location && rendition.location.start) {
-                currentLocation = rendition.location;
-            } else {
-                // Use our tracked page number as fallback
-                pageEl.textContent = currentPageNumber;
-                return;
-            }
-        }
-        
-        // Current "page" is spine item index + 1
+        // Calculate current page number
         var currentPage = currentPageNumber;
-        if (currentLocation.start && typeof currentLocation.start.index !== 'undefined') {
+        
+        // If we have a valid location, use its index
+        if (currentLocation && currentLocation.start && typeof currentLocation.start.index !== 'undefined') {
             currentPage = currentLocation.start.index + 1;
             // Update our tracked page number
             currentPageNumber = currentPage;
         }
         
-        // Make sure currentPage is a valid number before displaying
-        currentPage = !isNaN(currentPage) ? currentPage : 1;
+        // Make sure currentPage is a valid number
+        if (isNaN(currentPage) || !isFinite(currentPage)) {
+            currentPage = 1;
+            currentPageNumber = 1;
+        }
+        
+        // Ensure it's within valid range
+        currentPage = Math.max(1, Math.min(totalPageCount, currentPage));
+        currentPageNumber = currentPage;
         
         // Update current page display
         pageEl.textContent = currentPage;
-        
-        // Make sure totalPages is a valid number
-        var totalPages = book.spine && book.spine.items ? book.spine.items.length : 1;
-        
-        // Make sure it's not NaN before displaying
-        totalPages = !isNaN(totalPages) ? totalPages : 1;
-        
-        totalPagesEl.textContent = totalPages;
         
         // Update the pagination buttons if Reader module is available
         if (typeof Reader !== 'undefined' && Reader.updatePaginationButtons) {
@@ -336,7 +565,12 @@ var EPUBHandler = (function() {
         var total = book.spine.items ? book.spine.items.length : 1;
         
         // Make sure it's a valid number before displaying
-        total = !isNaN(total) ? total : 1;
+        if (isNaN(total) || !isFinite(total)) {
+            total = 1;
+        }
+        
+        // Store the total value
+        totalPageCount = total;
         
         totalPagesEl.textContent = total;
     }
@@ -358,7 +592,7 @@ var EPUBHandler = (function() {
             updateProgressInfo();
             
             // Save progress if we have a current book
-            if (currentBook && currentBook.id) {
+            if (currentBook && currentBook.id && location && location.start && location.start.cfi) {
                 Storage.updateBookProgress(currentBook.id, location.start.cfi);
             }
         });
@@ -441,22 +675,35 @@ var EPUBHandler = (function() {
             return; // Already at the end, don't go further
         }
         
+        // Save the current page before navigation in case we need to revert
+        var previousPage = currentPageNumber;
+        
         rendition.next().then(function() {
-            // Increment our tracked page number, but don't exceed total pages
-            currentPageNumber = Math.min(book.spine.items.length, currentPageNumber + 1);
-            
-            // Calculate and directly update slider position based on current page
-            var sliderEl = document.getElementById('progress-slider');
-            if (sliderEl && book.spine && book.spine.items) {
-                var progress = (currentPageNumber - 1) / Math.max(1, book.spine.items.length - 1);
-                sliderEl.value = Math.round(progress * 100);
-            }
-            
-            // Update page display and progress info
-            updatePageDisplay();
-            updateProgressInfo();
-        }).catch(function() {
-            // If we couldn't go to the next page, do nothing
+            // Wait slightly to let the rendition's locationChanged event fire
+            // which will have updated currentLocation and currentPageNumber
+            setTimeout(function() {
+                // If location update didn't happen properly, manually increment
+                if (currentPageNumber === previousPage) {
+                    // Increment our tracked page number, but don't exceed total pages
+                    currentPageNumber = Math.min(totalPageCount, currentPageNumber + 1);
+                }
+                
+                // Calculate and directly update slider position based on current page
+                var sliderEl = document.getElementById('progress-slider');
+                if (sliderEl && book.spine && book.spine.items) {
+                    var progress = (currentPageNumber - 1) / Math.max(1, book.spine.items.length - 1);
+                    var newValue = Math.round(progress * 100);
+                    if (parseInt(sliderEl.value, 10) !== newValue) {
+                        sliderEl.value = newValue;
+                    }
+                }
+                
+                // Update page display and progress info
+                updatePageDisplay();
+                updateProgressInfo();
+            }, 50);
+        }).catch(function(error) {
+            console.error("Error navigating to next page:", error);
         });
     }
     
@@ -471,22 +718,35 @@ var EPUBHandler = (function() {
             return; // Already at the beginning, don't go further
         }
         
+        // Save the current page before navigation in case we need to revert
+        var previousPage = currentPageNumber;
+        
         rendition.prev().then(function() {
-            // Decrement our tracked page number, but don't go below 1
-            currentPageNumber = Math.max(1, currentPageNumber - 1);
-            
-            // Calculate and directly update slider position based on current page
-            var sliderEl = document.getElementById('progress-slider');
-            if (sliderEl && book.spine && book.spine.items) {
-                var progress = (currentPageNumber - 1) / Math.max(1, book.spine.items.length - 1);
-                sliderEl.value = Math.round(progress * 100);
-            }
-            
-            // Update page display and progress info
-            updatePageDisplay();
-            updateProgressInfo();
-        }).catch(function() {
-            // If we couldn't go to the previous page, do nothing
+            // Wait slightly to let the rendition's locationChanged event fire
+            // which will have updated currentLocation and currentPageNumber
+            setTimeout(function() {
+                // If location update didn't happen properly, manually decrement
+                if (currentPageNumber === previousPage) {
+                    // Decrement our tracked page number, but don't go below 1
+                    currentPageNumber = Math.max(1, currentPageNumber - 1);
+                }
+                
+                // Calculate and directly update slider position based on current page
+                var sliderEl = document.getElementById('progress-slider');
+                if (sliderEl && book.spine && book.spine.items) {
+                    var progress = (currentPageNumber - 1) / Math.max(1, book.spine.items.length - 1);
+                    var newValue = Math.round(progress * 100);
+                    if (parseInt(sliderEl.value, 10) !== newValue) {
+                        sliderEl.value = newValue;
+                    }
+                }
+                
+                // Update page display and progress info
+                updatePageDisplay();
+                updateProgressInfo();
+            }, 50);
+        }).catch(function(error) {
+            console.error("Error navigating to previous page:", error);
         });
     }
     
@@ -575,8 +835,74 @@ var EPUBHandler = (function() {
         var reader = new FileReader();
         
         reader.onload = function(e) {
-            var data = e.target.result;
+            var data = e.target.result; // ArrayBuffer format
+            console.log('EPUB file read as:', typeof data);
+            if (data instanceof ArrayBuffer) {
+                console.log('EPUB data size:', data.byteLength, 'bytes');
+            }
+            
             var tempBook = ePub();
+            
+            // Safety check for data
+            if (!data || (typeof data === 'string' && data.length < 10)) {
+                console.error('Invalid EPUB data received');
+                callback(null, 'Invalid EPUB data: File appears to be empty or corrupted');
+                return;
+            }
+            
+            // Ensure we have appropriate binary data
+            if (typeof data === 'string') {
+                console.warn('EPUB data is string, converting to ArrayBuffer...');
+                
+                // Handle Base64 encoded data (UEsDB... prefix)
+                if (data.indexOf('UEsDB') === 0) {
+                    console.log('Detected Base64 encoded data in parseEpub');
+                    try {
+                        // Try to decode as Base64
+                        try {
+                            var binaryString = atob(data);
+                            var bytes = new Uint8Array(binaryString.length);
+                            for (var i = 0; i < binaryString.length; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            data = bytes.buffer;
+                            console.log('Successfully converted Base64 to ArrayBuffer in parseEpub');
+                        } catch (decodeError) {
+                            console.error('Base64 decode failed in parseEpub:', decodeError);
+                            // Create a blob and URL as fallback
+                            var blob = new Blob([data], {type: 'application/epub+zip'});
+                            data = URL.createObjectURL(blob);
+                            console.log('Created blob URL from Base64 data in parseEpub');
+                        }
+                    } catch (e) {
+                        console.error('Error handling UEsDB data in parseEpub:', e);
+                    }
+                }
+                // Regular binary string starting with PK
+                else if (data.indexOf('PK') === 0) {
+                    try {
+                        var len = data.length;
+                        var bytes = new Uint8Array(len);
+                        for (var i = 0; i < len; i++) {
+                            bytes[i] = data.charCodeAt(i);
+                        }
+                        data = bytes.buffer;
+                        console.log('Converted binary string to ArrayBuffer for parsing');
+                    } catch (e) {
+                        console.error('Error converting string to ArrayBuffer:', e);
+                    }
+                }
+                // For other string formats, try creating a blob
+                else {
+                    try {
+                        var blob = new Blob([data], {type: 'application/epub+zip'});
+                        data = URL.createObjectURL(blob);
+                        console.log('Created blob URL from string data in parseEpub');
+                    } catch (e) {
+                        console.error('Error creating blob in parseEpub:', e);
+                    }
+                }
+            }
             
             tempBook.open(data)
                 .then(function() {
@@ -589,18 +915,47 @@ var EPUBHandler = (function() {
                         title: metadata.title || file.name,
                         author: metadata.creator || 'Unknown',
                         format: 'epub',
-                        data: data,
+                        data: data, // Store the ArrayBuffer directly
                         added: new Date().getTime(),
                         position: null,
                         lastRead: null,
                         locations: null
                     };
                     
+                    // Log book information
+                    console.log('Parsed EPUB book:', bookData.title, 'by', bookData.author);
+                    console.log('Book data type:', typeof bookData.data);
+                    if (bookData.data instanceof ArrayBuffer) {
+                        console.log('Book data is ArrayBuffer, size:', bookData.data.byteLength);
+                    }
+                    
                     // Get cover if available
                     tempBook.loaded.cover
                         .then(function(coverUrl) {
-                            bookData.cover = coverUrl;
-                            callback(bookData);
+                            if (coverUrl) {
+                                // Extract the raw cover data to store with the book
+                                var xhr = new XMLHttpRequest();
+                                xhr.open('GET', coverUrl, true);
+                                xhr.responseType = 'blob';
+                                xhr.onload = function() {
+                                    if (xhr.status === 200) {
+                                        var reader = new FileReader();
+                                        reader.onloadend = function() {
+                                            bookData.cover = reader.result;
+                                            callback(bookData);
+                                        };
+                                        reader.readAsDataURL(xhr.response);
+                                    } else {
+                                        callback(bookData);
+                                    }
+                                };
+                                xhr.onerror = function() {
+                                    callback(bookData);
+                                };
+                                xhr.send();
+                            } else {
+                                callback(bookData);
+                            }
                         })
                         .catch(function() {
                             callback(bookData);
@@ -617,6 +972,7 @@ var EPUBHandler = (function() {
             callback(null, 'Error reading file: ' + error);
         };
         
+        // Read file as ArrayBuffer to handle binary data properly
         reader.readAsArrayBuffer(file);
     }
     

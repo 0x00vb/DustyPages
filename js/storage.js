@@ -53,8 +53,34 @@ var Storage = (function() {
      * Save a book to the database
      */
     function saveBook(book, callback) {
+        // Validate book data
+        if (!book || !book.id || !book.title) {
+            console.error('Invalid book data provided to saveBook');
+            if (callback) callback(null);
+            return;
+        }
+        
+        // Log book size info for debugging
+        var dataSize = 'unknown';
+        if (book.data) {
+            if (typeof book.data === 'string') {
+                dataSize = book.data.length + ' chars';
+            } else if (book.data instanceof ArrayBuffer) {
+                dataSize = book.data.byteLength + ' bytes';
+            }
+        }
+        console.log('Saving book:', book.title, '- data size:', dataSize);
+        
         if (!indexedDBSupported) {
             saveBookToLocalStorage(book);
+            
+            // Sync with server if logged in
+            if (typeof Users !== 'undefined' && Users.isLoggedIn()) {
+                Users.uploadBook(book, function(success) {
+                    console.log('Book upload ' + (success ? 'succeeded' : 'failed') + ' for: ' + book.title);
+                });
+            }
+            
             if (callback) callback(book);
             return;
         }
@@ -66,19 +92,32 @@ var Storage = (function() {
             return;
         }
         
-        var transaction = db.transaction([BOOKS_STORE], 'readwrite');
-        var store = transaction.objectStore(BOOKS_STORE);
-        var request = store.put(book);
-        
-        request.onsuccess = function() {
-            console.log('Book saved successfully');
-            if (callback) callback(book);
-        };
-        
-        request.onerror = function(event) {
-            console.log('Error saving book', event);
+        try {
+            var transaction = db.transaction([BOOKS_STORE], 'readwrite');
+            var store = transaction.objectStore(BOOKS_STORE);
+            var request = store.put(book);
+            
+            request.onsuccess = function() {
+                console.log('Book saved successfully');
+                
+                // Sync with server if logged in
+                if (typeof Users !== 'undefined' && Users.isLoggedIn()) {
+                    Users.uploadBook(book, function(success) {
+                        console.log('Book upload ' + (success ? 'succeeded' : 'failed') + ' for: ' + book.title);
+                    });
+                }
+                
+                if (callback) callback(book);
+            };
+            
+            request.onerror = function(event) {
+                console.log('Error saving book:', event);
+                if (callback) callback(null);
+            };
+        } catch (e) {
+            console.error('Exception while saving book:', e);
             if (callback) callback(null);
-        };
+        }
     }
     
     /**
@@ -106,7 +145,12 @@ var Storage = (function() {
         request.onsuccess = function(event) {
             var cursor = event.target.result;
             if (cursor) {
-                books.push(cursor.value);
+                try {
+                    books.push(cursor.value);
+                } catch (e) {
+                    console.error('Error processing book in cursor:', e);
+                    // Skip this book but continue processing others
+                }
                 cursor.continue();
             } else {
                 if (callback) callback(books);
@@ -141,7 +185,39 @@ var Storage = (function() {
         var request = store.get(id);
         
         request.onsuccess = function() {
-            if (callback) callback(request.result);
+            var book = request.result;
+            
+            // Process book data if needed
+            if (book && book.data) {
+                console.log('Retrieved book:', book.title);
+                console.log('Book data type:', typeof book.data);
+                
+                // Handle string data that should be binary
+                if (typeof book.data === 'string' && (book.data.indexOf('UEsDB') === 0)) {
+                    console.log('Book data appears to be Base64 encoded binary data');
+                    try {
+                        // Try to convert from Base64 to ArrayBuffer
+                        try {
+                            console.log('Attempting to convert Base64 to ArrayBuffer');
+                            var binaryString = atob(book.data);
+                            var bytes = new Uint8Array(binaryString.length);
+                            for (var i = 0; i < binaryString.length; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            book.data = bytes.buffer;
+                            console.log('Successfully converted Base64 to ArrayBuffer');
+                        } catch (decodeError) {
+                            console.error('Base64 decode failed:', decodeError);
+                            // Keep original data if conversion fails
+                            console.log('Keeping original string data');
+                        }
+                    } catch (e) {
+                        console.error('Error processing book data:', e);
+                    }
+                }
+            }
+            
+            if (callback) callback(book);
         };
         
         request.onerror = function(event) {
@@ -155,8 +231,16 @@ var Storage = (function() {
      */
     function deleteBook(id, callback) {
         if (!indexedDBSupported) {
-            deleteBookFromLocalStorage(id);
-            if (callback) callback(true);
+            var deleted = deleteBookFromLocalStorage(id);
+            
+            // Sync with server if logged in
+            if (deleted && typeof Users !== 'undefined' && Users.isLoggedIn()) {
+                Users.deleteBookFromServer(id, function(success) {
+                    console.log('Book deletion from server ' + (success ? 'succeeded' : 'failed'));
+                });
+            }
+            
+            if (callback) callback(deleted);
             return;
         }
         
@@ -173,6 +257,14 @@ var Storage = (function() {
         
         request.onsuccess = function() {
             console.log('Book deleted successfully');
+            
+            // Sync with server if logged in
+            if (typeof Users !== 'undefined' && Users.isLoggedIn()) {
+                Users.deleteBookFromServer(id, function(success) {
+                    console.log('Book deletion from server ' + (success ? 'succeeded' : 'failed'));
+                });
+            }
+            
             if (callback) callback(true);
         };
         
@@ -189,6 +281,9 @@ var Storage = (function() {
         if (!indexedDBSupported) {
             updateBookProgressInLocalStorage(id, position);
             if (callback) callback(true);
+            
+            // Sync with server if logged in
+            syncBookProgressWithServer(id, position);
             return;
         }
         
@@ -199,11 +294,41 @@ var Storage = (function() {
                 
                 saveBook(book, function(result) {
                     if (callback) callback(!!result);
+                    
+                    // Sync with server if logged in
+                    if (result) {
+                        syncBookProgressWithServer(id, position, book);
+                    }
                 });
             } else {
                 if (callback) callback(false);
             }
         });
+    }
+    
+    /**
+     * Sync book progress with server if user is logged in
+     * @private
+     */
+    function syncBookProgressWithServer(id, position, bookData) {
+        // Check if Users module exists and user is logged in
+        if (typeof Users !== 'undefined' && Users.isLoggedIn()) {
+            if (bookData) {
+                // We already have the book data, just update it on the server
+                Users.updateBook(bookData, function(success) {
+                    console.log('Book progress sync ' + (success ? 'succeeded' : 'failed'));
+                });
+            } else {
+                // We need to get the book data first
+                getBook(id, function(book) {
+                    if (book) {
+                        Users.updateBook(book, function(success) {
+                            console.log('Book progress sync ' + (success ? 'succeeded' : 'failed'));
+                        });
+                    }
+                });
+            }
+        }
     }
     
     /**

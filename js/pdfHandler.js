@@ -16,6 +16,7 @@ var PDFHandler = (function() {
     var pageRendering = false;
     var pageNumPending = null;
     var scale = 1.0;
+    var progressUpdating = false;
     
     // Initialize PDF.js library
     if (typeof pdfjsLib === 'undefined') {
@@ -70,8 +71,8 @@ var PDFHandler = (function() {
                 }
                 
                 // Load initial page (either saved position or first page)
-                if (bookData.position) {
-                    currentPage = bookData.position;
+                if (bookData.position && !isNaN(parseInt(bookData.position, 10))) {
+                    currentPage = Math.max(1, Math.min(totalPages, parseInt(bookData.position, 10)));
                 } else {
                     currentPage = 1;
                 }
@@ -163,43 +164,63 @@ var PDFHandler = (function() {
      * Update progress information
      */
     function updateProgressInfo() {
-        if (!pdfDoc) return;
+        if (!pdfDoc || progressUpdating) return;
         
-        var percentEl = document.getElementById('progress-percent');
-        var sliderEl = document.getElementById('progress-slider');
-        var pageEl = document.getElementById('current-page');
+        progressUpdating = true;
         
-        // Calculate progress
-        var progress = ((currentPage - 1) / Math.max(1, totalPages - 1)) * 100;
-        if (isNaN(progress)) progress = 0;
-        
-        // Ensure progress is between 0 and 100
-        progress = Math.max(0, Math.min(100, progress));
-        
-        // Update progress percentage display
-        if (percentEl) {
-            percentEl.textContent = Math.round(progress) + '%';
-        }
-        
-        // Update slider with a forced update
-        if (sliderEl) {
-            // Set the value directly
-            sliderEl.value = Math.round(progress);
+        try {
+            var percentEl = document.getElementById('progress-percent');
+            var sliderEl = document.getElementById('progress-slider');
+            var pageEl = document.getElementById('current-page');
             
-            // Force a UI update by triggering an input event
-            var event = document.createEvent('HTMLEvents');
-            event.initEvent('input', false, true);
-            sliderEl.dispatchEvent(event);
-        }
-        
-        // Update page display
-        if (pageEl) {
-            pageEl.textContent = currentPage;
-        }
-        
-        // Update the pagination buttons if Reader module is available
-        if (typeof Reader !== 'undefined' && Reader.updatePaginationButtons) {
-            Reader.updatePaginationButtons();
+            // Calculate progress - ensure we're using valid values
+            // When only 1 page, progress should be 100% at that page
+            var progress = 0;
+            if (totalPages <= 1) {
+                progress = 100;
+            } else {
+                // For multiple pages, calculate progress percentage
+                progress = ((currentPage - 1) / Math.max(1, totalPages - 1)) * 100;
+            }
+            
+            // Ensure progress is a valid number
+            if (isNaN(progress) || !isFinite(progress)) {
+                progress = 0;
+            }
+            
+            // Ensure progress is between 0 and 100
+            progress = Math.max(0, Math.min(100, progress));
+            
+            // Update progress percentage display
+            if (percentEl) {
+                percentEl.textContent = Math.round(progress) + '%';
+            }
+            
+            // Update slider 
+            if (sliderEl) {
+                // Only update if the value has actually changed
+                var newValue = Math.round(progress);
+                if (parseInt(sliderEl.value, 10) !== newValue) {
+                    sliderEl.value = newValue;
+                    
+                    // Trigger an input event to ensure UI is updated
+                    var event = document.createEvent('HTMLEvents');
+                    event.initEvent('input', false, true);
+                    sliderEl.dispatchEvent(event);
+                }
+            }
+            
+            // Update page display - ensure the displayed page matches the internal state
+            if (pageEl && pageEl.textContent !== currentPage.toString()) {
+                pageEl.textContent = currentPage;
+            }
+            
+            // Update the pagination buttons if Reader module is available
+            if (typeof Reader !== 'undefined' && Reader.updatePaginationButtons) {
+                Reader.updatePaginationButtons();
+            }
+        } finally {
+            progressUpdating = false;
         }
     }
     
@@ -208,6 +229,9 @@ var PDFHandler = (function() {
      */
     function renderPage(pageNum) {
         pageRendering = true;
+        
+        // Ensure page number is valid
+        pageNum = Math.max(1, Math.min(totalPages, pageNum));
         
         // Update current page
         currentPage = pageNum;
@@ -256,12 +280,21 @@ var PDFHandler = (function() {
                 
                 // Save progress if we have a current book
                 if (currentBook && currentBook.id) {
-                    Storage.updateBookProgress(currentBook.id, pageNum);
+                    Storage.updateBookProgress(currentBook.id, currentPage);
                 }
                 
                 // Update progress info again after rendering is complete
                 updateProgressInfo();
             });
+        }).catch(function(error) {
+            console.error('Error rendering PDF page:', error);
+            pageRendering = false;
+            
+            // If another page rendering is pending, try that page
+            if (pageNumPending !== null) {
+                renderPage(pageNumPending);
+                pageNumPending = null;
+            }
         });
     }
     
@@ -456,11 +489,16 @@ var PDFHandler = (function() {
         var reader = new FileReader();
         
         reader.onload = function(e) {
-            var data = e.target.result;
+            var data = e.target.result; // ArrayBuffer format
             
             if (!pdfjsLib) {
                 callback(null, 'PDF.js library not loaded correctly');
                 return;
+            }
+            
+            console.log('PDF data type:', typeof data);
+            if (data instanceof ArrayBuffer) {
+                console.log('PDF data is ArrayBuffer, size:', data.byteLength);
             }
             
             // Try to get PDF metadata - use pdfjsLib instead of PDFJS
@@ -474,11 +512,14 @@ var PDFHandler = (function() {
                         title: info.Title || file.name.replace('.pdf', ''),
                         author: info.Author || 'Unknown',
                         format: 'pdf',
-                        data: data,
+                        data: data, // Store the ArrayBuffer directly
                         added: new Date().getTime(),
                         position: 1,
                         lastRead: null
                     };
+                    
+                    // Log book information
+                    console.log('Parsed PDF book:', bookData.title, 'by', bookData.author);
                     
                     // Get first page as cover thumbnail
                     pdf.getPage(1).then(function(page) {
@@ -488,20 +529,28 @@ var PDFHandler = (function() {
                         coverCanvas.height = viewport.height;
                         coverCanvas.width = viewport.width;
                         
-                        page.render({
+                        var renderTask = page.render({
                             canvasContext: coverContext,
                             viewport: viewport
-                        }).promise.then(function() {
+                        });
+                        
+                        renderTask.promise.then(function() {
                             try {
-                                bookData.cover = coverCanvas.toDataURL();
+                                // Use a higher quality setting for the thumbnail
+                                bookData.cover = coverCanvas.toDataURL('image/jpeg', 0.8);
+                                callback(bookData);
                             } catch (e) {
                                 // Ignore errors with toDataURL (can happen with tainted canvas)
                                 console.log('Could not create thumbnail:', e);
+                                callback(bookData);
                             }
+                        }).catch(function(error) {
+                            console.log('Error rendering PDF cover:', error);
                             callback(bookData);
                         });
-                    }).catch(function() {
+                    }).catch(function(error) {
                         // If we couldn't get the cover, return the book data anyway
+                        console.log('Could not get PDF first page for cover:', error);
                         callback(bookData);
                     });
                 }).catch(function() {
@@ -512,11 +561,12 @@ var PDFHandler = (function() {
                         title: file.name.replace('.pdf', ''),
                         author: 'Unknown',
                         format: 'pdf',
-                        data: data,
+                        data: data, // Store the ArrayBuffer directly
                         added: new Date().getTime(),
                         position: 1,
                         lastRead: null
                     };
+                    console.log('Created PDF book with basic metadata due to error');
                     callback(bookData);
                 });
             }).catch(function(error) {
@@ -530,6 +580,7 @@ var PDFHandler = (function() {
             callback(null, 'Error reading file: ' + error);
         };
         
+        // Read file as ArrayBuffer to handle binary data properly
         reader.readAsArrayBuffer(file);
     }
     

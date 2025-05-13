@@ -58,11 +58,110 @@ button:active {
     font-weight: normal;
 }
 
+#user-status {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+}
+
+#user-info {
+    margin-right: 8px;
+}
+
+#sync-status {
+    margin-right: 8px;
+    font-style: italic;
+    color: #666;
+}
+
+.small-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
 main {
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     position: relative;
+}
+
+/* Authentication View */
+#auth-view {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.auth-container {
+    background-color: white;
+    border-radius: 8px;
+    padding: 20px;
+    width: 90%;
+    max-width: 320px;
+}
+
+#auth-title {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.auth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+#auth-submit {
+    background-color: #4A90E2;
+    color: white;
+    font-weight: bold;
+}
+
+#auth-toggle {
+    background-color: transparent;
+    border: none;
+    color: #4A90E2;
+    text-decoration: underline;
+    font-size: 12px;
+}
+
+#close-auth {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.error-message {
+    color: red;
+    font-size: 12px;
+    margin-bottom: 15px;
+    text-align: center;
 }
 
 /* Library View */
@@ -107,11 +206,31 @@ main {
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    text-align: center;
+    position: relative;
 }
 
 .book-cover img {
     max-width: 100%;
     max-height: 100%;
+    object-fit: contain;
+}
+
+.book-cover-fallback {
+    padding: 10px;
+    font-weight: bold;
+    font-size: 16px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+    border: 1px solid #ddd;
+    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .book-title {

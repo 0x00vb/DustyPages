@@ -15,7 +15,57 @@ var Reader = (function() {
         // Get the book data from storage
         Storage.getBook(bookId, function(book) {
             if (!book) {
-                console.log('Book not found:', bookId);
+                console.log('Book not found in local storage:', bookId);
+                // If user is logged in, try to get the book from the server
+                if (Users.isLoggedIn()) {
+                    console.log('Attempting to get book from server...');
+                    Users.getRemoteBook(bookId, function(success, remoteBook) {
+                        if (success && remoteBook) {
+                            console.log('Book retrieved from server successfully');
+                            
+                            // If we have actual book content, convert it from Base64 if needed
+                            if (remoteBook.data && typeof remoteBook.data === 'string') {
+                                console.log('Processing book data from server, type:', typeof remoteBook.data);
+                                console.log('Book data length:', remoteBook.data.length);
+                                
+                                // If the data starts with UEsDB or PK, it's probably binary data in Base64
+                                if (remoteBook.data.indexOf('UEsDB') === 0 || remoteBook.data.indexOf('PK') === 0) {
+                                    try {
+                                        // Try to decode as Base64
+                                        console.log('Attempting to convert apparent Base64 data');
+                                        try {
+                                            var binaryString = atob(remoteBook.data);
+                                            var bytes = new Uint8Array(binaryString.length);
+                                            for (var i = 0; i < binaryString.length; i++) {
+                                                bytes[i] = binaryString.charCodeAt(i);
+                                            }
+                                            remoteBook.data = bytes.buffer;
+                                            console.log('Successfully converted Base64 to ArrayBuffer from server data');
+                                        } catch (decodeError) {
+                                            console.error('Base64 decode failed for server data:', decodeError);
+                                            // If conversion fails, we'll keep the string data as-is
+                                            console.log('Using original string data from server');
+                                        }
+                                    } catch (e) {
+                                        console.error('Error processing book data from server:', e);
+                                    }
+                                }
+                            }
+                            
+                            Storage.saveBook(remoteBook, function(savedBook) {
+                                if (savedBook) {
+                                    openBook(bookId); // Recursively call openBook with the now-saved book
+                                } else {
+                                    showError('Failed to save book from server');
+                                }
+                            });
+                        } else {
+                            showError('Book not found on server or locally');
+                        }
+                    });
+                } else {
+                    showError('Book not found: ' + bookId);
+                }
                 return;
             }
             
@@ -27,12 +77,55 @@ var Reader = (function() {
                 titleEl.textContent = book.title;
             }
             
+            // Check if book has data
+            if (!book.data) {
+                console.log('Book has no data:', bookId);
+                if (Users.isLoggedIn()) {
+                    console.log('Attempting to get book data from server...');
+                    Users.getRemoteBook(bookId, function(success, remoteBook) {
+                        if (success && remoteBook && remoteBook.data) {
+                            console.log('Book data retrieved from server successfully');
+                            Storage.saveBook(remoteBook, function(savedBook) {
+                                if (savedBook) {
+                                    openBook(bookId); // Recursively call openBook with the now-complete book
+                                } else {
+                                    showError('Failed to save book data from server');
+                                }
+                            });
+                        } else {
+                            showError('Book data not available locally or on server');
+                        }
+                    });
+                } else {
+                    showError('Book data not available. Please reupload the book.');
+                }
+                return;
+            }
+            
             // Initialize the appropriate reader
             if (book.format === 'epub') {
                 currentReaderType = 'epub';
                 EPUBHandler.init(book, 'reader-container', function(success, error) {
                     if (!success) {
+                        console.error('Failed to open EPUB book:', error);
                         showError(error || 'Failed to open EPUB book');
+                        
+                        // If there's an issue with the book data, attempt to redownload if user is logged in
+                        if (Users.isLoggedIn() && error && (error.indexOf('Failed to open EPUB file') >= 0 || error.indexOf('Error initializing EPUB reader') >= 0)) {
+                            console.log('Attempting to get fresh book data from server...');
+                            Users.getRemoteBook(bookId, function(success, remoteBook) {
+                                if (success && remoteBook && remoteBook.data) {
+                                    console.log('Fresh book data retrieved from server successfully');
+                                    Storage.saveBook(remoteBook, function(savedBook) {
+                                        if (savedBook) {
+                                            openBook(bookId); // Retry opening with fresh data
+                                        } else {
+                                            showError('Failed to save fresh book data from server');
+                                        }
+                                    });
+                                }
+                            });
+                        }
                     } else {
                         // Apply current settings
                         applySettings(Storage.getSettings());
@@ -42,7 +135,25 @@ var Reader = (function() {
                 currentReaderType = 'pdf';
                 PDFHandler.init(book, 'reader-container', function(success, error) {
                     if (!success) {
+                        console.error('Failed to open PDF book:', error);
                         showError(error || 'Failed to open PDF book');
+                        
+                        // If there's an issue with the book data, attempt to redownload if user is logged in
+                        if (Users.isLoggedIn() && error && (error.indexOf('Failed to load PDF') >= 0 || error.indexOf('Error initializing PDF reader') >= 0)) {
+                            console.log('Attempting to get fresh book data from server...');
+                            Users.getRemoteBook(bookId, function(success, remoteBook) {
+                                if (success && remoteBook && remoteBook.data) {
+                                    console.log('Fresh book data retrieved from server successfully');
+                                    Storage.saveBook(remoteBook, function(savedBook) {
+                                        if (savedBook) {
+                                            openBook(bookId); // Retry opening with fresh data
+                                        } else {
+                                            showError('Failed to save fresh book data from server');
+                                        }
+                                    });
+                                }
+                            });
+                        }
                     } else {
                         // Apply current settings
                         applySettings(Storage.getSettings());
@@ -216,6 +327,17 @@ var Reader = (function() {
                             refreshBookList(function() {
                                 openBook(bookData.id);
                             });
+                            
+                            // If user is logged in, upload to server
+                            if (Users.isLoggedIn()) {
+                                Users.uploadBook(bookData, function(success) {
+                                    if (success) {
+                                        console.log('Book uploaded to server successfully');
+                                    } else {
+                                        console.log('Failed to upload book to server');
+                                    }
+                                });
+                            }
                         } else {
                             showError('Failed to save book');
                         }
@@ -235,6 +357,17 @@ var Reader = (function() {
                             refreshBookList(function() {
                                 openBook(bookData.id);
                             });
+                            
+                            // If user is logged in, upload to server
+                            if (Users.isLoggedIn()) {
+                                Users.uploadBook(bookData, function(success) {
+                                    if (success) {
+                                        console.log('Book uploaded to server successfully');
+                                    } else {
+                                        console.log('Failed to upload book to server');
+                                    }
+                                });
+                            }
                         } else {
                             showError('Failed to save book');
                         }
@@ -285,10 +418,16 @@ var Reader = (function() {
                 if (book.cover) {
                     var img = document.createElement('img');
                     img.src = book.cover;
+                    img.alt = book.title;
+                    img.onerror = function() {
+                        // If image fails to load, replace with fallback
+                        cover.removeChild(img);
+                        createFallbackCover(cover, book.title);
+                    };
                     cover.appendChild(img);
                 } else {
-                    // Default cover with title if no cover image
-                    cover.textContent = book.title;
+                    // Create fallback cover with title if no cover image
+                    createFallbackCover(cover, book.title);
                 }
                 
                 // Create book info
@@ -342,6 +481,17 @@ var Reader = (function() {
         Storage.deleteBook(bookId, function(success) {
             if (success) {
                 refreshBookList();
+                
+                // If user is logged in, delete from server
+                if (Users.isLoggedIn()) {
+                    Users.deleteBookFromServer(bookId, function(serverSuccess) {
+                        if (serverSuccess) {
+                            console.log('Book deleted from server successfully');
+                        } else {
+                            console.log('Failed to delete book from server');
+                        }
+                    });
+                }
             } else {
                 showError('Failed to delete book');
             }
@@ -621,6 +771,18 @@ var Reader = (function() {
         if (percentEl) {
             percentEl.textContent = Math.round(progress) + '%';
         }
+    }
+    
+    /**
+     * Creates a fallback cover with styled book title
+     * @param {HTMLElement} coverElement - The cover container element
+     * @param {string} title - The book title to display
+     */
+    function createFallbackCover(coverElement, title) {
+        var fallback = document.createElement('div');
+        fallback.className = 'book-cover-fallback';
+        fallback.textContent = title;
+        coverElement.appendChild(fallback);
     }
     
     // Public API

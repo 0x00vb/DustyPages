@@ -17,9 +17,35 @@
                 <button id="back-to-library">Library</button>
                 <button id="toggle-settings">Settings</button>
             </div>
+            <div id="user-status">
+                <span id="sync-status"></span>
+                <span id="user-info"></span>
+                <button id="login-button" class="small-btn">Login</button>
+            </div>
         </header>
 
         <main>
+            <!-- Login/Register View -->
+            <div id="auth-view" class="hidden">
+                <div class="auth-container">
+                    <h2 id="auth-title">Login</h2>
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" placeholder="Enter username">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" placeholder="Enter password">
+                    </div>
+                    <div class="auth-buttons">
+                        <button id="auth-submit">Login</button>
+                        <button id="auth-toggle">Need an account? Register</button>
+                    </div>
+                    <div id="auth-error" class="error-message"></div>
+                    <button id="close-auth">Cancel</button>
+                </div>
+            </div>
+
             <!-- Library View -->
             <div id="library-view">
                 <div class="add-book-container">
@@ -103,6 +129,7 @@
     <script src="js/lib/pdf.min.js"></script>
     <script src="js/lib-config.js"></script>
     <script src="js/storage.js"></script>
+    <script src="js/users.js"></script>
     <script src="js/epubHandler.js"></script>
     <script src="js/pdfHandler.js"></script>
     <script src="js/reader.js"></script>

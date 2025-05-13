@@ -1,0 +1,99 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+AI/Developer Task Prompt:
+Create a lightweight, fully offline-capable **Book Reader Web App** specifically for **Safari on iOS 9 (e.g., iPad 2)**. The app must support both **PDF** and **EPUB** formats, allow file uploads from the local device, persist user progress, and offer reading customization (themes, fonts, sizes). 
+
+⚠️ Critical Constraints:
+- 100% compatibility with **iOS 9 Safari**
+- Use only **ES5 JavaScript**
+- No `fetch`, no `Promise` — use `XMLHttpRequest` and callbacks
+- Use **AppCache**, IndexedDB, and localStorage (no Service Workers)
+- No ES6+, no frameworks, no modern build tools
+
+🎯 Goals:
+- Full offline reading experience
+- Touch-optimized and responsive UI
+- EPUB rendering via `epub.js v0.3.x`
+- PDF rendering via lightweight `pdf.js` (2015–2017 fork)
+- Local book library with persistent storage
+- Clean and modular Vanilla JS codebase
+
+📁 Core Features:
+1. **File Management**
+   - Upload `.epub` and `.pdf` via `<input type="file">`
+   - Store in IndexedDB or localStorage
+   - List books on homepage
+   - Delete books individually
+
+2. **Reader Interface**
+   - Render EPUB (scroll or paginate)
+   - Render PDF with zoom and page nav
+   - Track last read position for each book
+   - Progress slider to jump across pages
+
+3. **Customization Options**
+   - Themes: Light, Sepia, Dark
+   - Fonts: Serif, Sans-serif, Dyslexic-friendly
+   - Font Sizes: S / M / L / XL
+   - Basic margin/padding adjustments
+
+4. **Offline Support**
+   - Use AppCache, IndexedDB/localStorage
+   - Ensure all assets work offline
+   - All books and preferences persist after refresh
+
+5. **User Interface**
+   - Mobile-first responsive layout
+   - Touch gestures: swipe left/right for navigation
+   - Clean design, distraction-free mode
+   - SVG or inline icons
+
+6. **Optional (if feasible within constraints):**
+   - Sync user’s book library across devices when back online
+
+🧪 Technical Constraints:
+- **HTML5 + CSS3 (no SASS/PostCSS)**
+- **JavaScript ES5 only**
+- No modern libraries/frameworks (no React/Vue)
+- Avoid large dependencies
+
+📖 Documentation:
+- Include inline code comments
+- Provide a lightweight Markdown `.md` file for setup, code structure, and known limitations
+
+---
+
+.cursorcues
+
+```json
+{
+  "language": "JavaScript",
+  "style": "ES5",
+  "htmlVersion": "HTML5",
+  "cssLevel": "CSS3",
+  "noFramework": true,
+  "avoid": ["fetch", "Promise", "async/await", "React", "Vue", "modern polyfills"],
+  "use": ["XMLHttpRequest", "epub.js v0.3.x", "pdf.js (2015–2017 fork)", "AppCache", "IndexedDB"],
+  "compatibilityTarget": "Safari iOS 9",
+  "fileStructure": {
+    "entry": "index.html",
+    "scripts": ["js/reader.js", "js/storage.js", "js/pdfHandler.js", "js/epubHandler.js"],
+    "styles": ["css/styles.css", "css/themes.css"],
+    "documentation": "README.md"
+  },
+  "uiDesign": {
+    "responsive": true,
+    "mobileFirst": true,
+    "touchSupport": true,
+    "themeSupport": true,
+    "fontOptions": true,
+    "accessibility": ["dyslexia-friendly fonts"]
+  },
+  "performance": {
+    "optimizeFor": "low-memory devices",
+    "dependencies": "lightweight only"
+  }
+}
