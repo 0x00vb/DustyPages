@@ -1,0 +1,67 @@
+/* Light Theme (Default) */
+.theme-light {
+    --bg-color: #ffffff;
+    --text-color: #333333;
+    --border-color: #dddddd;
+    --header-bg: #f5f5f5;
+    --btn-bg: #f0f0f0;
+    --btn-text: #333333;
+    --highlight-color: #4A90E2;
+}
+
+/* Sepia Theme */
+.theme-sepia {
+    --bg-color: #f8f2e3;
+    --text-color: #5b4636;
+    --border-color: #e0d6c2;
+    --header-bg: #f2e8d5;
+    --btn-bg: #eadec8;
+    --btn-text: #5b4636;
+    --highlight-color: #986e45;
+}
+
+/* Dark Theme */
+.theme-dark {
+    --bg-color: #262626;
+    --text-color: #e0e0e0;
+    --border-color: #444444;
+    --header-bg: #1c1c1c;
+    --btn-bg: #333333;
+    --btn-text: #e0e0e0;
+    --highlight-color: #4A90E2;
+}
+
+/* Apply Theme Colors */
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+#app-header {
+    background-color: var(--header-bg);
+    border-color: var(--border-color);
+}
+
+button {
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+    border-color: var(--border-color);
+}
+
+.book-item {
+    background-color: var(--bg-color);
+    border-color: var(--border-color);
+}
+
+#settings-panel {
+    background-color: var(--bg-color);
+    border-color: var(--border-color);
+}
+
+#pagination {
+    border-color: var(--border-color);
+}
+
+.upload-btn {
+    background-color: var(--highlight-color);
+} 

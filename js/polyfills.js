@@ -1,307 +1,164 @@
 /**
- * Polyfills for RustyPages
- * Ensures compatibility with older browsers like iOS 9 Safari
+ * Polyfills for iOS 9 Safari compatibility
  */
 
-/**
- * Safari iOS 9 specific fixes and polyfills
- */
-
-// Handle broken localStorage in private browsing mode
-try {
-    localStorage.setItem('test', 'test');
-    localStorage.removeItem('test');
-} catch (e) {
-    // Create a memory-based fallback for localStorage
-    var MemoryStorage = function() {
-        this.data = {};
-        this.setItem = function(key, value) {
-            this.data[key] = String(value);
-        };
-        this.getItem = function(key) {
-            return this.data[key] === undefined ? null : this.data[key];
-        };
-        this.removeItem = function(key) {
-            delete this.data[key];
-        };
-        this.clear = function() {
-            this.data = {};
-        };
+// Array.prototype.forEach polyfill 
+if (!Array.prototype.forEach) {
+    Array.prototype.forEach = function(callback, thisArg) {
+        var T, k;
+        if (this == null) {
+            throw new TypeError('this is null or not defined');
+        }
+        var O = Object(this);
+        var len = O.length >>> 0;
+        if (typeof callback !== 'function') {
+            throw new TypeError(callback + ' is not a function');
+        }
+        if (arguments.length > 1) {
+            T = thisArg;
+        }
+        k = 0;
+        while (k < len) {
+            var kValue;
+            if (k in O) {
+                kValue = O[k];
+                callback.call(T, kValue, k, O);
+            }
+            k++;
+        }
     };
-    
-    // Replace localStorage with our implementation
-    Object.defineProperty(window, 'localStorage', {
-        value: new MemoryStorage(),
-        writable: false,
-        configurable: false
-    });
-    
-    console.log('Using memory storage fallback for localStorage');
 }
 
-// Fix requestAnimationFrame for iOS Safari
-(function() {
-    var lastTime = 0;
-    var vendors = ['webkit', 'moz', 'ms', 'o'];
-    for (var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
-        window.requestAnimationFrame = window[vendors[x] + 'RequestAnimationFrame'];
-        window.cancelAnimationFrame = window[vendors[x] + 'CancelAnimationFrame'] || 
-                                     window[vendors[x] + 'CancelRequestAnimationFrame'];
-    }
-
-    if (!window.requestAnimationFrame) {
-        window.requestAnimationFrame = function(callback) {
-            var currTime = new Date().getTime();
-            var timeToCall = Math.max(0, 16 - (currTime - lastTime));
-            var id = window.setTimeout(function() {
-                callback(currTime + timeToCall);
-            }, timeToCall);
-            lastTime = currTime + timeToCall;
-            return id;
-        };
-    }
-
-    if (!window.cancelAnimationFrame) {
-        window.cancelAnimationFrame = function(id) {
-            clearTimeout(id);
-        };
-    }
-}());
-
-// Fix for missing event.path in iOS Safari
-if (!Event.prototype.hasOwnProperty('path')) {
-    Object.defineProperty(Event.prototype, 'path', {
+// Element.prototype.classList polyfill (simplified)
+if (!("classList" in document.documentElement)) {
+    Object.defineProperty(Element.prototype, 'classList', {
         get: function() {
-            var path = [];
-            var currentElem = this.target;
-            while (currentElem) {
-                path.push(currentElem);
-                currentElem = currentElem.parentElement;
+            var self = this;
+            function update(fn) {
+                return function(value) {
+                    var classes = self.className.split(/\s+/g);
+                    var index = classes.indexOf(value);
+                    fn(classes, index, value);
+                    self.className = classes.join(" ");
+                    return self;
+                };
             }
-            if (path.indexOf(window) === -1 && path.indexOf(document) === -1) {
-                path.push(document);
-            }
-            if (path.indexOf(window) === -1) {
-                path.push(window);
-            }
-            return path;
+
+            return {
+                add: update(function(classes, index, value) {
+                    if (index === -1) {
+                        classes.push(value);
+                    }
+                }),
+                remove: update(function(classes, index) {
+                    if (index !== -1) {
+                        classes.splice(index, 1);
+                    }
+                }),
+                toggle: update(function(classes, index, value) {
+                    if (index === -1) {
+                        classes.push(value);
+                    } else {
+                        classes.splice(index, 1);
+                    }
+                }),
+                contains: function(value) {
+                    return self.className.split(/\s+/g).indexOf(value) !== -1;
+                }
+            };
         }
     });
 }
 
-// Fix for missing Element.matches
-if (!Element.prototype.matches) {
-    Element.prototype.matches = 
-        Element.prototype.matchesSelector || 
-        Element.prototype.mozMatchesSelector ||
-        Element.prototype.msMatchesSelector || 
-        Element.prototype.oMatchesSelector || 
-        Element.prototype.webkitMatchesSelector ||
-        function(s) {
-            var matches = (this.document || this.ownerDocument).querySelectorAll(s),
-                i = matches.length;
-            while (--i >= 0 && matches.item(i) !== this) {}
-            return i > -1;            
-        };
-}
+// Promise polyfill (minimal)
+if (!window.Promise) {
+    window.Promise = function(executor) {
+        var self = this;
+        self.status = 'pending';
+        self.value = null;
+        self.reason = null;
+        self.onResolvedCallbacks = [];
+        self.onRejectedCallbacks = [];
 
-// Array.from polyfill
-if (!Array.from) {
-    Array.from = function (iterable) {
-        if (iterable === null || iterable === undefined) {
-            throw new TypeError('Cannot convert undefined or null to object');
-        }
-        
-        var arrayLike = Object(iterable);
-        var len = arrayLike.length >>> 0;
-        var result = new Array(len);
-        
-        for (var i = 0; i < len; i++) {
-            if (i in arrayLike) {
-                result[i] = arrayLike[i];
+        function resolve(value) {
+            if (self.status === 'pending') {
+                self.status = 'resolved';
+                self.value = value;
+                for (var i = 0; i < self.onResolvedCallbacks.length; i++) {
+                    self.onResolvedCallbacks[i](value);
+                }
             }
         }
-        
-        return result;
-    };
-}
 
-// Promise polyfill for iOS 9
-if (typeof Promise === 'undefined') {
-    // Simple Promise polyfill (basic implementation)
-    window.Promise = function(executor) {
-        var callbacks = [];
-        var state = 'pending';
-        var value;
-        
-        function resolve(newValue) {
-            if (state !== 'pending') return;
-            value = newValue;
-            state = 'fulfilled';
-            execute();
-        }
-        
         function reject(reason) {
-            if (state !== 'pending') return;
-            value = reason;
-            state = 'rejected';
-            execute();
-        }
-        
-        function execute() {
-            setTimeout(function() {
-                callbacks.forEach(function(callback) {
-                    var cb = state === 'fulfilled' ? callback.onFulfilled : callback.onRejected;
-                    if (typeof cb === 'function') {
-                        try {
-                            var result = cb(value);
-                            callback.resolve(result);
-                        } catch(e) {
-                            callback.reject(e);
-                        }
-                    } else {
-                        (state === 'fulfilled' ? callback.resolve : callback.reject)(value);
-                    }
-                });
-                callbacks = [];
-            }, 0);
-        }
-        
-        this.then = function(onFulfilled, onRejected) {
-            return new Promise(function(resolve, reject) {
-                callbacks.push({
-                    onFulfilled: onFulfilled,
-                    onRejected: onRejected,
-                    resolve: resolve,
-                    reject: reject
-                });
-                if (state !== 'pending') {
-                    execute();
+            if (self.status === 'pending') {
+                self.status = 'rejected';
+                self.reason = reason;
+                for (var i = 0; i < self.onRejectedCallbacks.length; i++) {
+                    self.onRejectedCallbacks[i](reason);
                 }
-            });
-        };
-        
-        this.catch = function(onRejected) {
-            return this.then(null, onRejected);
-        };
-        
+            }
+        }
+
         try {
             executor(resolve, reject);
-        } catch(e) {
+        } catch (e) {
             reject(e);
         }
     };
-    
-    // Static methods
-    Promise.resolve = function(value) {
-        return new Promise(function(resolve) {
-            resolve(value);
-        });
+
+    window.Promise.prototype.then = function(onResolved, onRejected) {
+        var self = this;
+        if (self.status === 'resolved') {
+            setTimeout(function() {
+                onResolved(self.value);
+            });
+        } else if (self.status === 'rejected') {
+            setTimeout(function() {
+                onRejected(self.reason);
+            });
+        } else if (self.status === 'pending') {
+            self.onResolvedCallbacks.push(onResolved);
+            self.onRejectedCallbacks.push(onRejected);
+        }
+        return self;
     };
-    
-    Promise.reject = function(reason) {
-        return new Promise(function(resolve, reject) {
-            reject(reason);
-        });
+
+    window.Promise.prototype.catch = function(onRejected) {
+        return this.then(null, onRejected);
     };
 }
 
 // Object.assign polyfill
-if (typeof Object.assign !== 'function') {
+if (typeof Object.assign != 'function') {
     Object.assign = function(target) {
-        'use strict';
-        if (target === null || target === undefined) {
+        if (target == null) {
             throw new TypeError('Cannot convert undefined or null to object');
         }
 
-        var to = Object(target);
-        
+        target = Object(target);
         for (var index = 1; index < arguments.length; index++) {
-            var nextSource = arguments[index];
-            
-            if (nextSource !== null && nextSource !== undefined) {
-                for (var nextKey in nextSource) {
-                    if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
-                        to[nextKey] = nextSource[nextKey];
+            var source = arguments[index];
+            if (source != null) {
+                for (var key in source) {
+                    if (Object.prototype.hasOwnProperty.call(source, key)) {
+                        target[key] = source[key];
                     }
                 }
             }
         }
-        
-        return to;
+        return target;
     };
 }
 
-// ClassList toggle with second parameter polyfill
-if (window.DOMTokenList && !window.DOMTokenList.prototype.toggle.length) {
-    var original = window.DOMTokenList.prototype.toggle;
-    window.DOMTokenList.prototype.toggle = function(token, force) {
-        if (1 in arguments && !this.contains(token) === !force) {
-            return force;
-        } else {
-            return original.call(this, token);
+// Add passive event listener support if needed
+try {
+    var opts = Object.defineProperty({}, 'passive', {
+        get: function() {
+            window.supportsPassive = true;
         }
-    };
-}
-
-// Older iOS fixes
-(function() {
-    // Fix for 'tap delay' on older iOS Safari
-    document.addEventListener('touchend', function() {}, false);
-    
-    // Fix CSS position:fixed on iOS
-    var iOS = !!navigator.platform && /iPad|iPhone|iPod/.test(navigator.platform);
-    if (iOS) {
-        document.documentElement.classList.add('ios-device');
-    }
-})();
-
-// Fix for Object.keys being undefined on older Safari
-if (!Object.keys) {
-    Object.keys = function(obj) {
-        var keys = [];
-        for (var key in obj) {
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                keys.push(key);
-            }
-        }
-        return keys;
-    };
-}
-
-// ES5 fix for Function.prototype.bind
-if (!Function.prototype.bind) {
-    Function.prototype.bind = function(oThis) {
-        if (typeof this !== 'function') {
-            throw new TypeError('Function.prototype.bind - what is trying to be bound is not callable');
-        }
-        
-        var aArgs = Array.prototype.slice.call(arguments, 1);
-        var fToBind = this;
-        var fNOP = function() {};
-        var fBound = function() {
-            return fToBind.apply(
-                this instanceof fNOP ? this : oThis,
-                aArgs.concat(Array.prototype.slice.call(arguments))
-            );
-        };
-        
-        if (this.prototype) {
-            fNOP.prototype = this.prototype;
-        }
-        
-        fBound.prototype = new fNOP();
-        return fBound;
-    };
-}
-
-// iOS font bugfix - sometimes fonts don't load correctly in iOS PWAs
-window.addEventListener('DOMContentLoaded', function() {
-    // Force font redraw by making a small change to the body and then reverting it
-    setTimeout(function() {
-        document.body.style.opacity = "0.99";
-        setTimeout(function() {
-            document.body.style.opacity = "1";
-        }, 50);
-    }, 500);
-}); 
+    });
+    window.addEventListener("test", null, opts);
+} catch (e) {
+    window.supportsPassive = false;
+} 

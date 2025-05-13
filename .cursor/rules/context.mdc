@@ -1,0 +1,104 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+AI/Developer Prompt: Offline Book Reader Web App for iOS 9 (PDF + EPUB)
+🔖 Project Summary
+
+Develop a lightweight, offline-first book reader as a self-contained web app designed specifically for iOS 9 Safari (e.g., on an iPad 2). It must allow users to load PDF and EPUB files, read them offline, and customize the reading experience with themes and font settings. No cloud dependencies or third-party APIs are allowed. The goal is full control, usability, and compatibility with outdated hardware.
+🎯 Primary Goals
+
+    ✅ Seamless reading experience for EPUB and PDF
+
+    ✅ Fully offline capable
+
+    ✅ Runs on Safari iOS 9 (iPad 2)
+
+    ✅ Customizable UI: themes, fonts, sizes
+
+    ✅ Local book management (load from device)
+
+    ✅ Simple, responsive, touch-friendly UI
+
+📁 Core Features
+1. File Management
+
+    Load .epub and .pdf files from local device (via <input type="file">)
+
+    Store uploaded books in IndexedDB or localStorage
+
+    List uploaded books on homepage
+
+    Delete book option
+
+2. Reader UI
+
+    Smooth display of EPUB (pagination or scrolling)
+
+    PDF rendering with zoom & page navigation
+
+    Persistent reading position tracking per book
+
+3. Customization Options
+
+    Themes:
+
+        Light (white bg, black text)
+
+        Sepia (warm beige bg, brown text)
+
+        Dark (black bg, white text)
+
+    Fonts:
+
+        Serif (Georgia or similar)
+
+        Sans-serif (Helvetica or similar)
+
+        Dyslexic-friendly font (if lightweight version available)
+
+    Font Sizes:
+
+        Small / Medium / Large / Extra-Large
+
+    Margin/padding adjustments (basic)
+
+4. Offline Support
+
+    Cache assets and books using IndexedDB, AppCache, or localStorage (since iOS 9 doesn’t support Service Workers)
+
+    Ensure books and styles work after refresh and airplane mode
+
+5. User Interface
+
+    Simple, mobile-first design
+
+    Touch gestures: swipe for next/previous page (if feasible)
+
+    Clean, distraction-free reading mode
+
+    Lightweight icons (SVG or inline)
+
+🧪 Technical Constraints
+Browser Target: Safari iOS 9
+
+    No fetch, use XMLHttpRequest
+
+    No Promise, use callbacks or include a polyfill
+
+    No Service Worker, use AppCache or manual caching
+
+    Use epub.js v0.3.x (older versions more compatible)
+
+    Use a lightweight fork of pdf.js, or basic version from 2015–2017
+
+Language/Stack
+
+    HTML5 + CSS3 (no SASS/PostCSS)
+
+    JavaScript ES5 (strictly avoid ES6+ syntax)
+
+    No frameworks like React/Vue — only vanilla JS
+
+    Avoid heavy dependencies

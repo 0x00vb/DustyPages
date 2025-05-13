@@ -1,0 +1,33 @@
+CACHE MANIFEST
+# Version 1.0.2
+
+CACHE:
+# HTML
+index.html
+
+# CSS
+css/styles.css
+css/themes.css
+
+# JavaScript
+js/polyfills.js
+js/compatibility.js
+js/lib/jszip.min.js
+js/lib/epub.min.js
+js/lib/pdf.min.js
+js/lib/pdf.worker.min.js
+js/lib-config.js
+js/storage.js
+js/epubHandler.js
+js/pdfHandler.js
+js/reader.js
+js/app.js
+
+# Fonts (if any)
+# Add fonts here if needed
+
+NETWORK:
+*
+
+FALLBACK:
+/ index.html 

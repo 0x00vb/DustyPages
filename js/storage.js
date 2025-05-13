@@ -1,352 +1,342 @@
 /**
- * Storage module for RustyPages
- * Handles book storage using localStorage with binary chunking
+ * Storage Module for RustyPages
+ * Handles book storage and user settings using IndexedDB and localStorage
+ * Compatible with iOS 9 Safari
  */
 
 var Storage = (function() {
-    // Maximum size for chunks in localStorage (to avoid size limits)
-    var CHUNK_SIZE = 512 * 1024; // 512KB chunks
+    var db = null;
+    var DB_NAME = 'RustyPagesDB';
+    var DB_VERSION = 1;
+    var BOOKS_STORE = 'books';
     
-    // Key prefixes
-    var BOOK_INFO_PREFIX = 'rustyPages_book_';
-    var BOOK_DATA_PREFIX = 'rustyPages_data_';
-    var BOOK_LIST_KEY = 'rustyPages_bookList';
-    var SETTINGS_KEY = 'rustyPages_settings';
+    // Check if IndexedDB is available
+    var indexedDBSupported = window.indexedDB !== undefined;
     
     /**
-     * Convert ArrayBuffer to Base64 string
+     * Initialize the database
      */
-    function arrayBufferToBase64(buffer) {
-        var binary = '';
-        var bytes = new Uint8Array(buffer);
-        var len = bytes.byteLength;
-        for (var i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
+    function init(callback) {
+        if (!indexedDBSupported) {
+            console.log('IndexedDB not supported, falling back to localStorage');
+            if (callback) callback(false);
+            return;
         }
-        return window.btoa(binary);
+        
+        var request = window.indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onerror = function(event) {
+            console.log('Error opening database', event);
+            if (callback) callback(false);
+        };
+        
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            console.log('Database opened successfully');
+            if (callback) callback(true);
+        };
+        
+        request.onupgradeneeded = function(event) {
+            var db = event.target.result;
+            
+            // Create object store for books
+            if (!db.objectStoreNames.contains(BOOKS_STORE)) {
+                var store = db.createObjectStore(BOOKS_STORE, {keyPath: 'id'});
+                store.createIndex('title', 'title', {unique: false});
+                store.createIndex('added', 'added', {unique: false});
+                console.log('Book store created');
+            }
+        };
     }
     
     /**
-     * Convert Base64 string to ArrayBuffer
+     * Save a book to the database
      */
-    function base64ToArrayBuffer(base64) {
-        var binary_string = window.atob(base64);
-        var len = binary_string.length;
-        var bytes = new Uint8Array(len);
-        for (var i = 0; i < len; i++) {
-            bytes[i] = binary_string.charCodeAt(i);
+    function saveBook(book, callback) {
+        if (!indexedDBSupported) {
+            saveBookToLocalStorage(book);
+            if (callback) callback(book);
+            return;
         }
-        return bytes.buffer;
+        
+        if (!db) {
+            init(function() {
+                saveBook(book, callback);
+            });
+            return;
+        }
+        
+        var transaction = db.transaction([BOOKS_STORE], 'readwrite');
+        var store = transaction.objectStore(BOOKS_STORE);
+        var request = store.put(book);
+        
+        request.onsuccess = function() {
+            console.log('Book saved successfully');
+            if (callback) callback(book);
+        };
+        
+        request.onerror = function(event) {
+            console.log('Error saving book', event);
+            if (callback) callback(null);
+        };
     }
     
     /**
-     * Save book data in chunks to localStorage
+     * Get all books from the database
      */
-    function saveBookData(id, arrayBuffer) {
-        return new Promise(function(resolve, reject) {
-            try {
-                var base64Data = arrayBufferToBase64(arrayBuffer);
-                var chunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+    function getAllBooks(callback) {
+        if (!indexedDBSupported) {
+            var books = getBooksFromLocalStorage();
+            if (callback) callback(books);
+            return;
+        }
+        
+        if (!db) {
+            init(function() {
+                getAllBooks(callback);
+            });
+            return;
+        }
+        
+        var transaction = db.transaction([BOOKS_STORE], 'readonly');
+        var store = transaction.objectStore(BOOKS_STORE);
+        var request = store.index('added').openCursor(null, 'prev');
+        var books = [];
+        
+        request.onsuccess = function(event) {
+            var cursor = event.target.result;
+            if (cursor) {
+                books.push(cursor.value);
+                cursor.continue();
+            } else {
+                if (callback) callback(books);
+            }
+        };
+        
+        request.onerror = function(event) {
+            console.log('Error getting books', event);
+            if (callback) callback([]);
+        };
+    }
+    
+    /**
+     * Get a book by ID
+     */
+    function getBook(id, callback) {
+        if (!indexedDBSupported) {
+            var book = getBookFromLocalStorage(id);
+            if (callback) callback(book);
+            return;
+        }
+        
+        if (!db) {
+            init(function() {
+                getBook(id, callback);
+            });
+            return;
+        }
+        
+        var transaction = db.transaction([BOOKS_STORE], 'readonly');
+        var store = transaction.objectStore(BOOKS_STORE);
+        var request = store.get(id);
+        
+        request.onsuccess = function() {
+            if (callback) callback(request.result);
+        };
+        
+        request.onerror = function(event) {
+            console.log('Error getting book', event);
+            if (callback) callback(null);
+        };
+    }
+    
+    /**
+     * Delete a book by ID
+     */
+    function deleteBook(id, callback) {
+        if (!indexedDBSupported) {
+            deleteBookFromLocalStorage(id);
+            if (callback) callback(true);
+            return;
+        }
+        
+        if (!db) {
+            init(function() {
+                deleteBook(id, callback);
+            });
+            return;
+        }
+        
+        var transaction = db.transaction([BOOKS_STORE], 'readwrite');
+        var store = transaction.objectStore(BOOKS_STORE);
+        var request = store.delete(id);
+        
+        request.onsuccess = function() {
+            console.log('Book deleted successfully');
+            if (callback) callback(true);
+        };
+        
+        request.onerror = function(event) {
+            console.log('Error deleting book', event);
+            if (callback) callback(false);
+        };
+    }
+    
+    /**
+     * Update book reading progress
+     */
+    function updateBookProgress(id, position, callback) {
+        if (!indexedDBSupported) {
+            updateBookProgressInLocalStorage(id, position);
+            if (callback) callback(true);
+            return;
+        }
+        
+        getBook(id, function(book) {
+            if (book) {
+                book.position = position;
+                book.lastRead = new Date().getTime();
                 
-                // Store how many chunks we have
-                localStorage.setItem(BOOK_DATA_PREFIX + id + '_chunks', chunks);
-                
-                // Store each chunk
-                for (var i = 0; i < chunks; i++) {
-                    var chunk = base64Data.substr(i * CHUNK_SIZE, CHUNK_SIZE);
-                    localStorage.setItem(BOOK_DATA_PREFIX + id + '_' + i, chunk);
-                }
-                
-                resolve();
-            } catch (e) {
-                reject(e);
+                saveBook(book, function(result) {
+                    if (callback) callback(!!result);
+                });
+            } else {
+                if (callback) callback(false);
             }
         });
     }
     
     /**
-     * Load book data from localStorage chunks
+     * Save user settings to localStorage
      */
-    function loadBookData(id) {
-        return new Promise(function(resolve, reject) {
-            try {
-                var chunks = parseInt(localStorage.getItem(BOOK_DATA_PREFIX + id + '_chunks'), 10);
-                
-                if (isNaN(chunks) || chunks <= 0) {
-                    return reject(new Error('Book data not found'));
-                }
-                
-                var base64Data = '';
-                
-                // Combine all chunks
-                for (var i = 0; i < chunks; i++) {
-                    var chunk = localStorage.getItem(BOOK_DATA_PREFIX + id + '_' + i);
-                    if (!chunk) {
-                        return reject(new Error('Book data corrupted'));
-                    }
-                    base64Data += chunk;
-                }
-                
-                var arrayBuffer = base64ToArrayBuffer(base64Data);
-                resolve(arrayBuffer);
-            } catch (e) {
-                reject(e);
-            }
-        });
+    function saveSettings(settings) {
+        try {
+            localStorage.setItem('RustyPagesSettings', JSON.stringify(settings));
+            return true;
+        } catch (e) {
+            console.log('Error saving settings', e);
+            return false;
+        }
     }
     
     /**
-     * Delete book data and its chunks
+     * Get user settings from localStorage
      */
-    function deleteBookData(id) {
-        return new Promise(function(resolve, reject) {
-            try {
-                var chunks = parseInt(localStorage.getItem(BOOK_DATA_PREFIX + id + '_chunks'), 10);
-                
-                if (!isNaN(chunks) && chunks > 0) {
-                    // Delete all chunks
-                    for (var i = 0; i < chunks; i++) {
-                        localStorage.removeItem(BOOK_DATA_PREFIX + id + '_' + i);
-                    }
-                }
-                
-                // Delete chunk count
-                localStorage.removeItem(BOOK_DATA_PREFIX + id + '_chunks');
-                resolve();
-            } catch (e) {
-                reject(e);
-            }
-        });
+    function getSettings() {
+        try {
+            var settings = localStorage.getItem('RustyPagesSettings');
+            return settings ? JSON.parse(settings) : getDefaultSettings();
+        } catch (e) {
+            console.log('Error getting settings', e);
+            return getDefaultSettings();
+        }
     }
     
+    /**
+     * Get default settings
+     */
+    function getDefaultSettings() {
+        return {
+            theme: 'light',
+            font: 'serif',
+            fontSize: 'medium',
+            margin: 'medium'
+        };
+    }
+    
+    /**
+     * localStorage fallback for books when IndexedDB is not available
+     */
+    function saveBookToLocalStorage(book) {
+        try {
+            var books = getBooksFromLocalStorage();
+            
+            // Find and remove the book if it already exists
+            for (var i = 0; i < books.length; i++) {
+                if (books[i].id === book.id) {
+                    books.splice(i, 1);
+                    break;
+                }
+            }
+            
+            // Add the book
+            books.push(book);
+            
+            // Save books
+            localStorage.setItem('RustyPagesBooks', JSON.stringify(books));
+        } catch (e) {
+            console.log('Error saving book to localStorage', e);
+        }
+    }
+    
+    function getBooksFromLocalStorage() {
+        try {
+            var books = localStorage.getItem('RustyPagesBooks');
+            return books ? JSON.parse(books) : [];
+        } catch (e) {
+            console.log('Error getting books from localStorage', e);
+            return [];
+        }
+    }
+    
+    function getBookFromLocalStorage(id) {
+        var books = getBooksFromLocalStorage();
+        for (var i = 0; i < books.length; i++) {
+            if (books[i].id === id) {
+                return books[i];
+            }
+        }
+        return null;
+    }
+    
+    function deleteBookFromLocalStorage(id) {
+        try {
+            var books = getBooksFromLocalStorage();
+            
+            for (var i = 0; i < books.length; i++) {
+                if (books[i].id === id) {
+                    books.splice(i, 1);
+                    localStorage.setItem('RustyPagesBooks', JSON.stringify(books));
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (e) {
+            console.log('Error deleting book from localStorage', e);
+            return false;
+        }
+    }
+    
+    function updateBookProgressInLocalStorage(id, position) {
+        try {
+            var books = getBooksFromLocalStorage();
+            
+            for (var i = 0; i < books.length; i++) {
+                if (books[i].id === id) {
+                    books[i].position = position;
+                    books[i].lastRead = new Date().getTime();
+                    localStorage.setItem('RustyPagesBooks', JSON.stringify(books));
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (e) {
+            console.log('Error updating book progress in localStorage', e);
+            return false;
+        }
+    }
+    
+    // Public API
     return {
-        /**
-         * Save a book to storage
-         */
-        saveBook: function(book) {
-            return new Promise(function(resolve, reject) {
-                try {
-                    // Get current book list
-                    var bookList = JSON.parse(localStorage.getItem(BOOK_LIST_KEY) || '[]');
-                    
-                    // Check if book already exists
-                    var existingIndex = -1;
-                    for (var i = 0; i < bookList.length; i++) {
-                        if (bookList[i].id === book.id) {
-                            existingIndex = i;
-                            break;
-                        }
-                    }
-                    
-                    // Create a book info object without the raw data
-                    var bookInfo = {
-                        id: book.id,
-                        title: book.title || 'Unknown Title',
-                        author: book.author || 'Unknown Author',
-                        format: book.format,
-                        addedAt: book.addedAt || new Date().toISOString(),
-                        lastRead: book.lastRead || null,
-                        progress: book.progress || 0,
-                        currentLocation: book.currentLocation || null
-                    };
-                    
-                    // Update or add to list
-                    if (existingIndex !== -1) {
-                        bookList[existingIndex] = bookInfo;
-                    } else {
-                        bookList.push(bookInfo);
-                    }
-                    
-                    // Save book list
-                    localStorage.setItem(BOOK_LIST_KEY, JSON.stringify(bookList));
-                    
-                    // Save book info
-                    localStorage.setItem(BOOK_INFO_PREFIX + book.id, JSON.stringify(bookInfo));
-                    
-                    // Save book data if provided
-                    if (book.data) {
-                        saveBookData(book.id, book.data)
-                            .then(resolve)
-                            .catch(reject);
-                    } else {
-                        resolve();
-                    }
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Get all books in the library
-         */
-        getBooks: function() {
-            return new Promise(function(resolve, reject) {
-                try {
-                    var bookList = JSON.parse(localStorage.getItem(BOOK_LIST_KEY) || '[]');
-                    resolve(bookList);
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Get a specific book by ID, with or without its data
-         */
-        getBook: function(id, includeData) {
-            return new Promise(function(resolve, reject) {
-                try {
-                    var bookInfoJson = localStorage.getItem(BOOK_INFO_PREFIX + id);
-                    
-                    if (!bookInfoJson) {
-                        return reject(new Error('Book not found'));
-                    }
-                    
-                    var bookInfo = JSON.parse(bookInfoJson);
-                    
-                    if (includeData) {
-                        loadBookData(id)
-                            .then(function(data) {
-                                bookInfo.data = data;
-                                resolve(bookInfo);
-                            })
-                            .catch(reject);
-                    } else {
-                        resolve(bookInfo);
-                    }
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Delete a book from storage
-         */
-        deleteBook: function(id) {
-            return new Promise(function(resolve, reject) {
-                try {
-                    // Get current book list
-                    var bookList = JSON.parse(localStorage.getItem(BOOK_LIST_KEY) || '[]');
-                    
-                    // Remove from list
-                    bookList = bookList.filter(function(book) {
-                        return book.id !== id;
-                    });
-                    
-                    // Save updated list
-                    localStorage.setItem(BOOK_LIST_KEY, JSON.stringify(bookList));
-                    
-                    // Remove book info
-                    localStorage.removeItem(BOOK_INFO_PREFIX + id);
-                    
-                    // Remove book data
-                    deleteBookData(id)
-                        .then(resolve)
-                        .catch(reject);
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Update book reading progress
-         */
-        updateProgress: function(id, progress, currentLocation) {
-            return new Promise(function(resolve, reject) {
-                try {
-                    var bookInfoJson = localStorage.getItem(BOOK_INFO_PREFIX + id);
-                    
-                    if (!bookInfoJson) {
-                        return reject(new Error('Book not found'));
-                    }
-                    
-                    var bookInfo = JSON.parse(bookInfoJson);
-                    bookInfo.progress = progress;
-                    bookInfo.currentLocation = currentLocation;
-                    bookInfo.lastRead = new Date().toISOString();
-                    
-                    // Save updated book info
-                    localStorage.setItem(BOOK_INFO_PREFIX + id, JSON.stringify(bookInfo));
-                    
-                    // Also update in book list
-                    var bookList = JSON.parse(localStorage.getItem(BOOK_LIST_KEY) || '[]');
-                    
-                    for (var i = 0; i < bookList.length; i++) {
-                        if (bookList[i].id === id) {
-                            bookList[i].progress = progress;
-                            bookList[i].lastRead = bookInfo.lastRead;
-                            break;
-                        }
-                    }
-                    
-                    localStorage.setItem(BOOK_LIST_KEY, JSON.stringify(bookList));
-                    resolve();
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Save app settings
-         */
-        saveSettings: function(settings) {
-            return new Promise(function(resolve, reject) {
-                try {
-                    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-                    resolve();
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Get app settings
-         */
-        getSettings: function() {
-            return new Promise(function(resolve, reject) {
-                try {
-                    var settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-                    
-                    // Apply defaults if settings don't exist
-                    var defaultSettings = {
-                        theme: 'light',
-                        fontSize: 100,
-                        fontFamily: 'serif'
-                    };
-                    
-                    resolve(Object.assign({}, defaultSettings, settings));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        },
-        
-        /**
-         * Estimate storage usage
-         */
-        getStorageUsage: function() {
-            return new Promise(function(resolve, reject) {
-                try {
-                    var total = 0;
-                    for (var i = 0; i < localStorage.length; i++) {
-                        var key = localStorage.key(i);
-                        if (key.indexOf('rustyPages_') === 0) {
-                            total += localStorage.getItem(key).length;
-                        }
-                    }
-                    
-                    // Convert to MB
-                    var usageMB = (total * 2) / (1024 * 1024);
-                    resolve(usageMB.toFixed(2));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        }
+        init: init,
+        saveBook: saveBook,
+        getAllBooks: getAllBooks,
+        getBook: getBook,
+        deleteBook: deleteBook,
+        updateBookProgress: updateBookProgress,
+        saveSettings: saveSettings,
+        getSettings: getSettings
     };
 })(); 
